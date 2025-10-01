@@ -5,13 +5,26 @@ type Props = { onAccess: (contactId: string) => void };
 
 const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms));
 
+/** Helper seguro para extraer un código/estado de error (si existe) */
+function getStatusFromError(err: unknown): number | undefined {
+  if (!err) return undefined;
+  const anyErr = err as any;
+  // Comprobaciones comunes usadas por diferentes libs/APIs
+  if (typeof anyErr.status === "number") return anyErr.status;
+  if (typeof anyErr.statusCode === "number") return anyErr.statusCode;
+  if (typeof anyErr.code === "number") return anyErr.code;
+  if (typeof anyErr.code === "string" && /^\d+$/.test(anyErr.code)) {
+    return parseInt(anyErr.code, 10);
+  }
+  return undefined;
+}
+
 export default function AccessForm({ onAccess }: Props) {
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  // Intenta sincronizar cualquier contacto pendiente al montar
   useEffect(() => {
     const trySyncPending = async () => {
       const pending = localStorage.getItem("pending_contact");
@@ -36,11 +49,12 @@ export default function AccessForm({ onAccess }: Props) {
     trySyncPending();
   }, [onAccess]);
 
-  // Reintentos con backoff exponencial
   const insertContactWithRetry = async (phoneVal: string, emailVal: string) => {
     const maxAttempts = 3;
     let attempt = 0;
-    let lastError: any = null;
+    let lastError: unknown = null;
+
+    const nonRetryableStatuses = [400, 401, 403, 422];
 
     while (attempt < maxAttempts) {
       attempt++;
@@ -55,33 +69,31 @@ export default function AccessForm({ onAccess }: Props) {
 
         if (error) {
           lastError = error;
-          // Si es error que claramente no tiene sentido reintentar (p. ej. constraint), romper
-          const nonRetryableStatuses = [400, 401, 403, 422];
-          if (error.status && nonRetryableStatuses.includes(error.status)) {
+          const status = getStatusFromError(error);
+          if (status && nonRetryableStatuses.includes(status)) {
+            // error no retryable, tirar hacia afuera
             throw error;
           }
-          // si no, esperar y reintentar
-          await sleep(300 * attempt); // backoff
+          // retryable -> backoff y reintentar
+          await sleep(300 * attempt);
         } else if (data) {
           return data.id;
         } else {
-          // caso raro: sin error y sin data
+          // caso extraño: sin error y sin data
           lastError = { message: "No data returned" };
           await sleep(300 * attempt);
         }
       } catch (err) {
         console.error("Insert attempt error:", attempt, err);
         lastError = err;
-        // Si es error fatal (ej. 404 del endpoint), devolver al caller
-        if (err && err.status && err.status === 404) {
-          // No reintentar si endpoint no existe
-          break;
-        }
+        const status = getStatusFromError(err);
+        // Si es 404 (endpoint/schema no existe), no tiene sentido reintentar
+        if (status === 404) break;
         await sleep(300 * attempt);
       }
     }
 
-    // después de reintentos, si sigue fallando, lanzamos el último error
+    // luego de intentar, si sigue fallando, lanzar último error para manejarlo arriba
     throw lastError;
   };
 
@@ -92,10 +104,8 @@ export default function AccessForm({ onAccess }: Props) {
       return;
     }
 
-    // Previene dobles envíos
     if (loading) return;
 
-    // Si ya hay registro (por localStorage), evita reinsertar
     if (localStorage.getItem("score_registered") === "true") {
       const existingId = localStorage.getItem("score_contact_id");
       if (existingId) {
@@ -107,7 +117,6 @@ export default function AccessForm({ onAccess }: Props) {
     setLoading(true);
     setError("");
 
-    // DEBUG: mostrar la configuración relevante (en prod verifica esto en la console del browser)
     console.log("Supabase config:", {
       url: import.meta.env.VITE_SUPABASE_URL,
       key: import.meta.env.VITE_SUPABASE_ANON_KEY ? "PRESENT" : "MISSING",
@@ -121,15 +130,21 @@ export default function AccessForm({ onAccess }: Props) {
         localStorage.setItem("score_contact_id", String(insertedId));
         onAccess(String(insertedId));
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error("Final error al insertar contact:", err);
-      // Si la petición falló por problemas de red / límite, guardamos en pending para reintentar luego
+      // Guardar pending para intentar luego
       const pending = { phone: phone.trim(), email: email.trim(), ts: Date.now() };
-      localStorage.setItem("pending_contact", JSON.stringify(pending));
+      try {
+        localStorage.setItem("pending_contact", JSON.stringify(pending));
+      } catch (e) {
+        console.error("No se pudo guardar pending_contact en localStorage:", e);
+      }
 
-      const status = err?.status ?? err?.code ?? "unknown";
+      const status = getStatusFromError(err);
       if (status === 404) {
         setError("Error 404: recurso no encontrado. Revisa la URL/endpoint de Supabase.");
+      } else if (status === 401 || status === 403) {
+        setError("Error de autenticación/permiso al guardar. Revisa la anon key y políticas RLS.");
       } else {
         setError("No se pudo guardar ahora. Se guardó localmente y se intentará sincronizar luego.");
       }
