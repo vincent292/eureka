@@ -1,11 +1,15 @@
 import { Link } from "react-router-dom"
 import HeroCarousel from "../components/HeroCarousel"
+import UbicacionSection from "../components/UbicacionSection"
+
 
 export default function Landing() {
   const images = [
-    "https://picsum.photos/id/1018/1920/1080",
-    "https://picsum.photos/id/1015/1920/1080",
-    "https://picsum.photos/id/1016/1920/1080",
+    "image/hero/hero1.jpg",
+    "image/hero/hero2.jpg",
+    "image/hero/hero3.jpg",
+    "image/hero/hero4.jpg",
+    "image/hero/hero5.jpg",
   ]
 
   return (
@@ -16,9 +20,11 @@ export default function Landing() {
       {/* Contenido debajo */}
       <div style={{ textAlign: "center", padding: "2rem" }}>
         <h1>Bienvenido al Minigolf</h1>
+        <h1>EUREKA</h1>
         <p>¡Disfruta tu juego y registra tu score!</p>
         <Link to="/score">Ir a Score</Link>
       </div>
+      <UbicacionSection />
     </div>
   )
 }

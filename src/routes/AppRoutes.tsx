@@ -5,7 +5,7 @@ import Navbar from "../components/Navbar.js"
 
 export const AppRoutes = () => (
   <BrowserRouter>
-        <Navbar/>
+    <Navbar/>
     <Routes>
       <Route path="/" element={<Landing />} />
       <Route path="/score" element={<Score />} />
