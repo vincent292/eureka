@@ -4,6 +4,7 @@
   min-height: 65vh;
   max-height: 65vh;
   overflow: hidden;
+  z-index: 0; /* carrusel detrás de la navbar */
 }
 
 .hero-carousel__slides {
@@ -31,6 +32,7 @@
   transform: translateX(-50%);
   display: flex;
   gap: 8px;
+  z-index: 1; /* indicadores sobre las imágenes, pero aún detrás de la navbar */
 }
 
 .hero-carousel__dot {
@@ -62,4 +64,10 @@
     min-height: 40vh;
     max-height: 40vh;
   }
+}
+
+/* Navbar ejemplo: debe tener un z-index mayor */
+.navbar {
+  position: relative; /* o fixed si quieres que se quede arriba */
+  z-index: 10; /* más alto que el carrusel */
 }
