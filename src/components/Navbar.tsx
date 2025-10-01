@@ -13,14 +13,16 @@ function Navbar() {
 
   return (
     <header>
-     <div>
-      <img src={eureka} alt="Eureka. logo" className="logo"/>
-    </div>
+<div>
+  <a href="/" target="_blank" rel="noopener noreferrer">
+    <img src={eureka} alt="Eureka logo" className="logo" />
+  </a>
+</div>
       <nav ref={navRef}>
-        <a href="/#">Home</a>
+        <a href="/">Home</a>
         <a href="/Score">Score Bar</a>
-        <a href="/#">Blog</a>
-        <a href="/#">About me</a>
+        <a href="/NovedadPage">Novedades</a>
+        <a href="/">About me</a>
         <button className="nav-btn nav-close-btn" onClick={showNavbar}>
           <FaTimes />
         </button>

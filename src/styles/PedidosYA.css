@@ -1,0 +1,87 @@
+.pedidosya-section {
+  background-color: #c84445;
+  padding: 60px 20px;
+  color: #fcf4eb;
+  display: flex;
+  justify-content: center;
+}
+
+.pedidosya-container {
+  display: flex;
+  max-width: 1200px;
+  width: 100%;
+  align-items: center;
+  gap: 50px;
+}
+
+/* Lado izquierdo */
+.pedidosya-left {
+  flex: 1;
+}
+
+.pedidosya-left h2 {
+  font-size: 2.5rem;
+  margin-bottom: 20px;
+  font-weight: 700;
+}
+
+.pedidosya-left p {
+  font-size: 1.2rem;
+  margin-bottom: 30px;
+}
+
+.pedidosya-btn {
+  width: 160px;
+  cursor: pointer;
+  transition: transform 0.3s;
+  background-color: #fcf4eb;
+  border-radius: 80px;
+  border-color: #ff0000;
+}
+
+.pedidosya-btn:hover {
+  transform: scale(1.05);
+}
+
+/* Lado derecho */
+.pedidosya-right {
+  flex: 1;
+}
+
+.pedidosya-right img {
+  width: 350px;
+  height: 350px;
+  border-radius: 20px;
+  object-fit: cover;
+  box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+}
+
+/* Responsive tablets */
+@media only screen and (max-width: 1024px) {
+  .pedidosya-container {
+    flex-direction: column;
+    gap: 30px;
+  }
+  .pedidosya-left, .pedidosya-right {
+    text-align: center;
+  }
+  .pedidosya-btn {
+    margin: 0 auto;
+  }
+}
+
+/* Responsive móviles */
+@media only screen and (max-width: 768px) {
+  .pedidosya-left h2 {
+    font-size: 2rem;
+  }
+  .pedidosya-left p {
+    font-size: 1rem;
+  }
+  .pedidosya-btn {
+    width: 140px;
+  }
+  .pedidosya-right img {
+    width: 90%;
+  }
+}
