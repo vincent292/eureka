@@ -22,7 +22,7 @@ function Navbar() {
         <a href="/">Home</a>
         <a href="/Score">Score Bar</a>
         <a href="/NovedadPage">Novedades</a>
-        <a href="/">About me</a>
+        <a href="/admin">Admin</a>
         <button className="nav-btn nav-close-btn" onClick={showNavbar}>
           <FaTimes />
         </button>

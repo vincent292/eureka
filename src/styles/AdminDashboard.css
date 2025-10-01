@@ -1,0 +1,155 @@
+.admin-container {
+  padding: 30px;
+  background-color: #f9fafb;
+  min-height: 100vh;
+  font-family: Arial, sans-serif;
+}
+
+.admin-title {
+  font-size: 28px;
+  font-weight: bold;
+  text-align: center;
+  color: #2d6a4f;
+  margin-bottom: 20px;
+}
+
+.loading {
+  text-align: center;
+  color: #6b7280;
+  font-size: 16px;
+}
+
+.promo-box {
+  margin-bottom: 20px;
+  display: flex;
+  justify-content: center;
+}
+
+.promo-box input {
+  width: 100%;
+  max-width: 500px;
+  padding: 10px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+}
+
+.table-container {
+  overflow-x: auto;
+  background: white;
+  border-radius: 10px;
+  box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.1);
+}
+
+.contacts-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.contacts-table thead {
+  background-color: #2d6a4f;
+  color: white;
+}
+
+.contacts-table th,
+.contacts-table td {
+  padding: 12px 15px;
+  text-align: left;
+  border-bottom: 1px solid #ddd;
+}
+
+.contacts-table tr:hover {
+  background-color: #f1f5f9;
+}
+
+button {
+  padding: 6px 12px;
+  margin: 2px;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.3s ease;
+}
+
+.btn-edit {
+  background-color: #3b82f6;
+  color: white;
+}
+
+.btn-edit:hover {
+  background-color: #2563eb;
+}
+
+.btn-delete {
+  background-color: #dc2626;
+  color: white;
+}
+
+.btn-delete:hover {
+  background-color: #b91c1c;
+}
+
+.btn-whatsapp {
+  background-color: #25d366;
+  color: white;
+}
+
+.btn-whatsapp:hover {
+  background-color: #1da851;
+}
+
+/* --- RESPONSIVE --- */
+
+/* Tablets grandes (≤1024px) */
+@media only screen and (max-width: 1024px) {
+  .admin-title {
+    font-size: 24px;
+  }
+
+  .contacts-table th,
+  .contacts-table td {
+    padding: 10px;
+    font-size: 14px;
+  }
+}
+
+/* Tablets chicas y móviles (≤768px) */
+@media only screen and (max-width: 768px) {
+  .contacts-table {
+    display: block;
+    border: 0;
+  }
+
+  .contacts-table thead {
+    display: none;
+  }
+
+  .contacts-table tr {
+    display: block;
+    margin-bottom: 15px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    background: #fff;
+    padding: 10px;
+  }
+
+  .contacts-table td {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px;
+    border: none;
+    font-size: 14px;
+  }
+
+  .contacts-table td::before {
+    content: attr(data-label);
+    font-weight: bold;
+    color: #374151;
+    margin-right: 10px;
+  }
+
+  button {
+    width: 100%;
+    margin: 5px 0;
+  }
+}
