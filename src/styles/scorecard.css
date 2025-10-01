@@ -1,0 +1,173 @@
+.scorecard-container {
+  width: 100%;
+  padding: 20px;
+  background: url("../../public/image/eureka.png") no-repeat center center fixed; /* 👈 tu marca de agua */
+  background-size: contain;
+  background-color: #fcf4eb; /* color de respaldo */
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  overflow-x: auto;
+}
+
+.scorecard-header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 15px;
+}
+
+.scorecard-logo {
+  height: 40px;
+  margin-right: 10px;
+}
+
+.scorecard-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: rgba(255, 255, 255, 0.85);
+}
+
+.scorecard-table th,
+.scorecard-table td {
+  border: 1px solid #b4c4d0;
+  text-align: center;
+  padding: 8px;
+}
+
+.hole-col {
+  width: 60px;
+  background: #0b3152;
+  color: white;
+  font-weight: bold;
+}
+
+.player-name {
+  width: 100%;
+  font-weight: bold;
+  text-align: center;
+  border: none;
+  background: transparent;
+}
+
+.score-input {
+  width: 60px;
+  text-align: center;
+  border: 1px solid #c84445;
+  border-radius: 4px;
+  outline: none;
+}
+
+.totals-row {
+  background: #7fad57;
+  color: white;
+  font-weight: bold;
+}
+
+.winner-row {
+  background: #c84445;
+  color: white;
+  font-weight: bold;
+}
+
+.buttons {
+  margin-top: 15px;
+  display: flex;
+  gap: 10px;
+}
+
+.buttons button {
+  background: #0b3152;
+  color: white;
+  border: none;
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: 0.3s;
+}
+
+.buttons button:hover {
+  background: #7fad57;
+}
+
+.player-name-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 4px; /* espacio entre input y botón */
+}
+
+.remove-player-btn {
+  background: #db2b39;
+  color: #fff;
+  border: none;
+  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  line-height: 1;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.3s;
+}
+
+.remove-player-btn:hover {
+  background: #ff4b5c;
+}
+
+
+@media only screen and (max-width: 1024px) {
+  .scorecard-table th,
+  .scorecard-table td {
+    padding: 6px;
+  }
+
+  .score-input {
+    width: 45px;
+  }
+
+    .player-name-wrapper {
+    flex-direction: row; /* sigue horizontal */
+    gap: 3px; /* un poco menos de espacio */
+  }
+
+  .remove-player-btn {
+    width: 18px;
+    height: 18px;
+    font-size: 0.7rem;
+  }
+
+  .player-name {
+    font-size: 0.9rem;
+  }
+}
+
+@media only screen and (max-width: 768px) {
+  .scorecard-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .scorecard-logo {
+    margin-bottom: 10px;
+  }
+
+  .score-input {
+    width: 40px;
+  }
+
+  .player-name-wrapper {
+    flex-direction: row;
+    gap: 2px;
+  }
+
+  .remove-player-btn {
+    width: 16px;
+    height: 16px;
+    font-size: 0.65rem;
+  }
+
+  .player-name {
+    font-size: 0.8rem;
+  }
+}

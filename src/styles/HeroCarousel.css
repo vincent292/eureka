@@ -1,0 +1,65 @@
+.hero-carousel {
+  position: relative;
+  width: 100%;
+  min-height: 65vh;
+  max-height: 65vh;
+  overflow: hidden;
+}
+
+.hero-carousel__slides {
+  display: flex;
+  transition: transform 0.7s ease-in-out;
+  width: 100%;
+  height: 100%;
+}
+
+.hero-carousel__slide {
+  flex: 0 0 100%;
+  width: 100%;
+  min-height: 65vh;
+  max-height: 65vh;
+  background-position: right center;
+  background-repeat: no-repeat;
+  background-size: cover;
+}
+
+/* indicadores */
+.hero-carousel__indicators {
+  position: absolute;
+  bottom: 15px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 8px;
+}
+
+.hero-carousel__dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: gray;
+  border: none;
+  cursor: pointer;
+  transition: background 0.3s ease;
+}
+
+.hero-carousel__dot.active {
+  background: white;
+}
+
+/* Responsivo */
+@media only screen and (max-width: 1024px) {
+  .hero-carousel,
+  .hero-carousel__slide {
+    min-height: 50vh;
+    max-height: 50vh;
+  }
+}
+
+@media only screen and (max-width: 768px) {
+  .hero-carousel,
+  .hero-carousel__slide {
+    min-height: 40vh;
+    max-height: 40vh;
+  }
+}

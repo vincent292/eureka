@@ -1,0 +1,83 @@
+/* src/styles/pdf.css */
+/* Esta hoja se aplica temporalmente al <body> cuando exportamos (se añade clase pdf-export) */
+body.pdf-export {
+  background: #fcf4eb !important;
+}
+
+/* Estilos específicos para la versión exportada de las scorecards */
+body.pdf-export .scorecard-container {
+  background: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 8px 20px rgba(11, 49, 82, 0.08);
+  border: 2px solid #e6efe8; /* sutil */
+  padding: 12px;
+}
+
+/* Cabecera */
+body.pdf-export .scorecard-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px dashed #b4c4d0;
+  margin-bottom: 8px;
+}
+
+body.pdf-export .scorecard-logo {
+  width: 56px;
+  height: 56px;
+  object-fit: contain;
+  opacity: 0.95;
+}
+
+/* Tabla */
+body.pdf-export .scorecard-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 10px;
+  color: #0b3152;
+}
+
+body.pdf-export .scorecard-table th,
+body.pdf-export .scorecard-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+body.pdf-export .hole-col {
+  background: #f6f9fb;
+  color: #0b3152;
+  font-weight: 700;
+}
+
+/* Nombres */
+body.pdf-export .player-name {
+  border: none;
+  background: transparent;
+  font-weight: 700;
+  color: #0b3152;
+}
+
+/* Totales y ganador */
+body.pdf-export .totals-row td {
+  font-weight: 800;
+  color: #c84445;
+}
+
+body.pdf-export .winner-row td {
+  font-weight: 700;
+  color: #7fad57;
+}
+
+/* Botones se ocultan en PDF */
+body.pdf-export .buttons,
+body.pdf-export .remove-player-btn,
+body.pdf-export .nav-btn {
+  display: none !important;
+}
+
+/* Ajustes móviles dentro del PDF export (si se renderiza en vista pequeña) */
+@media print, (max-width: 768px) {
+  body.pdf-export .scorecard-logo { width: 46px; height: 46px; }
+  body.pdf-export .scorecard-table { font-size: 9px; }
+}
