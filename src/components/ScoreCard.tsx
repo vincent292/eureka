@@ -66,7 +66,7 @@ export default function ScoreCard({ id, setRef }: ScoreCardProps) {
 
   const totalScores = players.map(p => p.scores.reduce((acc, s) => acc + s, 0));
   const minScore = Math.min(...totalScores);
-  const winner = players.find((p, i) => totalScores[i] === minScore)?.name || "N/A";
+ const winner = players.find((_, i) => totalScores[i] === minScore)?.name || "N/A";
 
   return (
     <div className="scorecard-container" ref={setRef}>

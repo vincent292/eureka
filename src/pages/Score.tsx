@@ -11,7 +11,7 @@ export default function Score() {
   const [cards, setCards] = useState<number[]>([1]);
   const scorecardRefs = useRef<(HTMLDivElement | null)[]>([]);
 
-  const handleAccess = (contactId: string) => {
+const handleAccess = (_contactId: string) => {
     setRegistered(true);
   };
 

@@ -14,7 +14,8 @@ const fileToDataUrl = (file: File): Promise<string> =>
 /**
  * Export PDF con diseño Eureka mejorado
  */
-export async function exportPDF(originalElements: HTMLElement[], logoSrc: string, optionalImage?: File) {
+export async function exportPDF(originalElements: HTMLElement[], _logoSrc: string, optionalImage?: File) {
+
   if (!originalElements || originalElements.length === 0) {
     console.warn("exportPDF: no hay elements");
     return;
