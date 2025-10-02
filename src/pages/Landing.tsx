@@ -10,11 +10,11 @@ import "../styles/Landing.css"
 
 export default function Landing() {
   const images = [
-    "image/hero/hero1.jpg",
-    "image/hero/hero2.jpg",
-    "image/hero/hero3.jpg",
-    "image/hero/hero4.jpg",
-    "image/hero/hero5.jpg",
+    "image/hero/hero1.webp",
+    "image/hero/hero2.webp",
+    "image/hero/hero3.webp",
+    "image/hero/hero4.webp",
+    "image/hero/hero5.webp",
   ]
 
   return (
