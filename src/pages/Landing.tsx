@@ -1,14 +1,18 @@
+import { useEffect, useRef } from "react"
 import { Link } from "react-router-dom"
+import { gsap } from "gsap"
+import { ScrollTrigger } from "gsap/ScrollTrigger"
 import HeroCarousel from "../components/HeroCarousel"
 import UbicacionSection from "../components/UbicacionSection"
 import Novedades from "../components/Novedades"
 import PedidosYA from "../components/PedidosYA"
 import "../styles/Landing.css"
 
-
-
+gsap.registerPlugin(ScrollTrigger)
 
 export default function Landing() {
+  const landingRef = useRef<HTMLDivElement | null>(null)
+
   const images = [
     "image/hero/hero1.webp",
     "image/hero/hero2.webp",
@@ -17,20 +21,137 @@ export default function Landing() {
     "image/hero/hero5.webp",
   ]
 
-  return (
-    <div>
-      {/* Carrusel a pantalla completa */}
-      <HeroCarousel images={images} interval={4000} />
+  useEffect(() => {
+    const ctx = gsap.context(() => {
+      const heroTimeline = gsap.timeline({
+        defaults: { ease: "power3.out" },
+      })
 
-      {/* Contenido debajo */}
-     <div className="landing-hero">
-        <h1>Bienvenido al Minigolf</h1>
-        <h1>EUREKA</h1>
-        <p>¡Disfruta tu juego y registra tu score!</p>
-        <Link to="/score" className="landing-hero-link">
-          Ir a Score
-        </Link>
-      </div>
+      heroTimeline
+        .from(".landing-pill", {
+          y: 20,
+          autoAlpha: 0,
+          duration: 0.55,
+        })
+        .from(
+          ".landing-hero__title-line",
+          {
+            y: 60,
+            autoAlpha: 0,
+            duration: 0.9,
+            stagger: 0.12,
+          },
+          "-=0.15",
+        )
+        .from(
+          ".landing-hero__description",
+          {
+            y: 26,
+            autoAlpha: 0,
+            duration: 0.7,
+          },
+          "-=0.45",
+        )
+        .from(
+          ".landing-hero__actions > *",
+          {
+            y: 18,
+            autoAlpha: 0,
+            duration: 0.55,
+            stagger: 0.1,
+          },
+          "-=0.3",
+        )
+        .from(
+          ".landing-panel",
+          {
+            x: 42,
+            autoAlpha: 0,
+            duration: 0.8,
+          },
+          "-=0.65",
+        )
+
+      gsap.to(".landing-panel__glow", {
+        x: 18,
+        y: -18,
+        duration: 4.6,
+        ease: "sine.inOut",
+        repeat: -1,
+        yoyo: true,
+      })
+
+      gsap.utils.toArray<HTMLElement>("[data-reveal]").forEach((element) => {
+        gsap.fromTo(
+          element,
+          {
+            y: 48,
+            autoAlpha: 0,
+          },
+          {
+            y: 0,
+            autoAlpha: 1,
+            duration: 0.9,
+            ease: "power3.out",
+            scrollTrigger: {
+              trigger: element,
+              start: "top 84%",
+            },
+          },
+        )
+      })
+    }, landingRef)
+
+    return () => ctx.revert()
+  }, [])
+
+  return (
+    <div className="landing-page" ref={landingRef}>
+      <HeroCarousel images={images} interval={4500} />
+
+      <section className="landing-hero">
+        <div className="landing-hero__content">
+          <span className="landing-pill">Minigolf, cafe y una salida distinta</span>
+
+          <h1 className="landing-hero__title">
+            <span className="landing-hero__title-line">EUREKA convierte</span>
+            <span className="landing-hero__title-line">
+              una tarde normal en planazo
+            </span>
+          </h1>
+
+          <p className="landing-hero__description">
+            Ven a jugar, compartir y registrar tu partida con una experiencia mas
+            moderna, visual y lista para enganchar desde el primer vistazo.
+          </p>
+
+          <div className="landing-hero__actions">
+            <Link to="/score" className="landing-hero-link landing-hero-link--primary">
+              Registrar score
+            </Link>
+            <a href="#novedades" className="landing-hero-link landing-hero-link--ghost">
+              Ver novedades
+            </a>
+          </div>
+        </div>
+
+        <aside className="landing-panel">
+          <div className="landing-panel__glow" />
+          <span className="landing-panel__eyebrow">Tu visita</span>
+          <h2>Un espacio para jugar, compartir y pasarla bien</h2>
+          <p>
+            Minigolf, cafe y un ambiente relajado para venir en pareja, con
+            amigos o en grupo y disfrutar algo distinto en la ciudad.
+          </p>
+
+          <ul className="landing-panel__list">
+            <li>Ideal para una salida casual y diferente</li>
+            <li>Promos, snacks y postres para acompanar la ronda</li>
+            <li>Acceso rapido al score para registrar la partida</li>
+          </ul>
+        </aside>
+      </section>
+
       <Novedades />
       <UbicacionSection />
       <PedidosYA />

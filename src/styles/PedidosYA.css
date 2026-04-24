@@ -1,87 +1,126 @@
 .pedidosya-section {
-  background-color: #c84445;
-  padding: 60px 20px;
-  color: #fcf4eb;
-  display: flex;
-  justify-content: center;
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 4.5rem 1.5rem 5rem;
 }
 
 .pedidosya-container {
-  display: flex;
-  max-width: 1200px;
-  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 0.92fr);
+  gap: 1.3rem;
   align-items: center;
-  gap: 50px;
+  padding: clamp(1.5rem, 3vw, 2rem);
+  border-radius: 34px;
+  background:
+    radial-gradient(circle at top right, rgba(248, 221, 153, 0.22), transparent 30%),
+    linear-gradient(135deg, #b93c40 0%, #8f262b 100%);
+  color: #f7f2e8;
+  box-shadow: 0 28px 60px rgba(143, 38, 43, 0.24);
 }
 
-/* Lado izquierdo */
-.pedidosya-left {
-  flex: 1;
+.pedidosya-section .section-title,
+.pedidosya-section .section-copy,
+.pedidosya-section .section-eyebrow {
+  color: #f7f2e8;
 }
 
-.pedidosya-left h2 {
-  font-size: 2.5rem;
-  margin-bottom: 20px;
-  font-weight: 700;
+.pedidosya-section .section-eyebrow {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.16);
 }
 
-.pedidosya-left p {
-  font-size: 1.2rem;
-  margin-bottom: 30px;
+.pedidosya-points {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin: 1.6rem 0 0;
 }
 
-.pedidosya-btn {
-  width: 160px;
-  cursor: pointer;
-  transition: transform 0.3s;
-  background-color: #fcf4eb;
-  border-radius: 80px;
-  border-color: #ff0000;
+.pedidosya-points span {
+  padding: 0.7rem 0.95rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff4de;
+  font-size: 0.92rem;
 }
 
-.pedidosya-btn:hover {
-  transform: scale(1.05);
+.pedidosya-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 54px;
+  margin-top: 1.8rem;
+  padding: 0.95rem 1.45rem;
+  border-radius: 999px;
+  background: #fff4de;
+  color: #8f262b;
+  font-weight: 800;
+  text-decoration: none;
+  transition:
+    transform 0.25s ease,
+    box-shadow 0.25s ease;
 }
 
-/* Lado derecho */
-.pedidosya-right {
-  flex: 1;
+.pedidosya-link:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 18px 34px rgba(23, 7, 8, 0.2);
 }
 
-.pedidosya-right img {
-  width: 350px;
-  height: 350px;
-  border-radius: 20px;
+.pedidosya-card {
+  overflow: hidden;
+  border-radius: 28px;
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  backdrop-filter: blur(14px);
+}
+
+.pedidosya-card img {
+  display: block;
+  width: 100%;
+  height: 340px;
   object-fit: cover;
-  box-shadow: 0 10px 20px rgba(0,0,0,0.2);
 }
 
-/* Responsive tablets */
+.pedidosya-card__content {
+  display: grid;
+  gap: 0.4rem;
+  padding: 1.25rem 1.2rem 1.35rem;
+}
+
+.pedidosya-card__content span {
+  color: #f8dd99;
+  font-size: 0.84rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.pedidosya-card__content strong {
+  font-family: "Sora", sans-serif;
+  font-size: 1.2rem;
+  line-height: 1.35;
+}
+
 @media only screen and (max-width: 1024px) {
   .pedidosya-container {
-    flex-direction: column;
-    gap: 30px;
-  }
-  .pedidosya-left, .pedidosya-right {
-    text-align: center;
-  }
-  .pedidosya-btn {
-    margin: 0 auto;
+    grid-template-columns: 1fr;
   }
 }
 
-/* Responsive móviles */
 @media only screen and (max-width: 768px) {
-  .pedidosya-left h2 {
-    font-size: 2rem;
+  .pedidosya-section {
+    padding: 3.25rem 1rem 4rem;
   }
-  .pedidosya-left p {
-    font-size: 1rem;
+
+  .pedidosya-container {
+    border-radius: 26px;
   }
-  .pedidosya-btn {
-    width: 140px;
+
+  .pedidosya-link {
+    width: 100%;
   }
-  .pedidosya-right img {
-    width: 90%;
+
+  .pedidosya-card img {
+    height: 280px;
   }
 }

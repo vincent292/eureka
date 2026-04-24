@@ -8,7 +8,11 @@ const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms));
 /** Helper seguro para extraer un código/estado de error (si existe) */
 function getStatusFromError(err: unknown): number | undefined {
   if (!err) return undefined;
-  const anyErr = err as any;
+  const anyErr = err as {
+    status?: number;
+    statusCode?: number;
+    code?: number | string;
+  };
   // Comprobaciones comunes usadas por diferentes libs/APIs
   if (typeof anyErr.status === "number") return anyErr.status;
   if (typeof anyErr.statusCode === "number") return anyErr.statusCode;

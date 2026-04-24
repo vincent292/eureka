@@ -1,173 +1,407 @@
 .scorecard-container {
+  position: relative;
+  overflow: hidden;
   width: 100%;
-  padding: 20px;
-  background: url("../../public/image/eureka.png") no-repeat center center fixed; /* 👈 tu marca de agua */
-  background-size: contain;
-  background-color: #fcf4eb; /* color de respaldo */
-  border-radius: 12px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-  overflow-x: auto;
+  max-width: 100%;
+  min-width: 0;
+  padding: 1.3rem;
+  border: 1px solid rgba(16, 33, 37, 0.08);
+  border-radius: 32px;
+  background:
+    radial-gradient(circle at top right, rgba(180, 224, 193, 0.18), transparent 26%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(242, 246, 235, 0.9));
+  box-shadow: 0 24px 55px rgba(16, 33, 37, 0.08);
+}
+
+.scorecard-container::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: url("/image/eureka.png") center center / 58% no-repeat;
+  opacity: 0.06;
+  pointer-events: none;
 }
 
 .scorecard-header {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  min-width: 0;
+}
+
+.scorecard-header__brand {
   display: flex;
   align-items: center;
-  margin-bottom: 15px;
+  gap: 0.9rem;
+  min-width: 0;
+}
+
+.scorecard-header__brand > div {
+  min-width: 0;
+}
+
+.scorecard-header__brand h2 {
+  margin: 0.2rem 0 0;
+  color: #102125;
+  font-family: "Sora", sans-serif;
+  font-size: clamp(1.35rem, 2vw, 1.7rem);
+  overflow-wrap: anywhere;
+}
+
+.scorecard-kicker {
+  color: #537133;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
 }
 
 .scorecard-logo {
-  height: 40px;
-  margin-right: 10px;
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+  border-radius: 18px;
+  box-shadow: 0 10px 24px rgba(83, 113, 51, 0.14);
+}
+
+.scorecard-header__stats {
+  display: flex;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.scorecard-stat {
+  min-width: 0;
+  padding: 0.8rem 0.9rem;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.75);
+  border: 1px solid rgba(16, 33, 37, 0.06);
+  text-align: center;
+}
+
+.scorecard-stat strong {
+  display: block;
+  color: #102125;
+  font-family: "Sora", sans-serif;
+  font-size: 1.05rem;
+}
+
+.scorecard-stat span {
+  color: #58676b;
+  font-size: 0.83rem;
+}
+
+.scorecard-table-shell {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+  border-radius: 24px;
+  border: 1px solid rgba(16, 33, 37, 0.08);
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.scorecard-table-shell::-webkit-scrollbar {
+  height: 10px;
+}
+
+.scorecard-table-shell::-webkit-scrollbar-thumb {
+  background: rgba(83, 113, 51, 0.35);
+  border-radius: 999px;
 }
 
 .scorecard-table {
   width: 100%;
+  min-width: 620px;
   border-collapse: collapse;
-  background: rgba(255, 255, 255, 0.85);
+  background: transparent;
 }
 
 .scorecard-table th,
 .scorecard-table td {
-  border: 1px solid #b4c4d0;
+  border: 1px solid rgba(180, 196, 208, 0.72);
+  padding: 0.8rem 0.65rem;
   text-align: center;
-  padding: 8px;
+}
+
+.player-header {
+  min-width: 140px;
+  background: rgba(255, 255, 255, 0.56);
 }
 
 .hole-col {
-  width: 60px;
-  background: #0b3152;
-  color: white;
-  font-weight: bold;
+  width: 74px;
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: linear-gradient(180deg, #173946, #102125);
+  color: #f6f3eb;
+  font-weight: 700;
 }
 
-.player-name {
-  width: 100%;
-  font-weight: bold;
-  text-align: center;
-  border: none;
-  background: transparent;
-}
-
-.score-input {
-  width: 60px;
-  text-align: center;
-  border: 1px solid #c84445;
-  border-radius: 4px;
-  outline: none;
-}
-
-.totals-row {
-  background: #7fad57;
-  color: white;
-  font-weight: bold;
-}
-
-.winner-row {
-  background: #c84445;
-  color: white;
-  font-weight: bold;
-}
-
-.buttons {
-  margin-top: 15px;
-  display: flex;
-  gap: 10px;
-}
-
-.buttons button {
-  background: #0b3152;
-  color: white;
-  border: none;
-  padding: 8px 12px;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: 0.3s;
-}
-
-.buttons button:hover {
-  background: #7fad57;
+.scorecard-scroll-note {
+  display: none;
+  position: relative;
+  z-index: 1;
+  margin: 0 0 0.75rem;
+  color: #5f6d53;
+  font-size: 0.84rem;
 }
 
 .player-name-wrapper {
   display: flex;
   align-items: center;
-  gap: 4px; /* espacio entre input y botón */
+  gap: 0.45rem;
+}
+
+.player-name {
+  width: 100%;
+  min-width: 0;
+  padding: 0.65rem 0.45rem;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.85);
+  color: #102125;
+  font-weight: 700;
+  text-align: center;
+  outline: none;
+  transition:
+    border-color 0.25s ease,
+    box-shadow 0.25s ease,
+    background-color 0.25s ease;
+}
+
+.player-name:focus,
+.score-input:focus {
+  border-color: rgba(127, 173, 87, 0.72);
+  box-shadow: 0 0 0 4px rgba(180, 224, 193, 0.28);
+  background: #ffffff;
+}
+
+.score-input {
+  width: 64px;
+  padding: 0.65rem 0.5rem;
+  border: 1px solid rgba(200, 68, 69, 0.24);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #102125;
+  text-align: center;
+  outline: none;
+  transition:
+    border-color 0.25s ease,
+    box-shadow 0.25s ease,
+    transform 0.25s ease;
+}
+
+.score-input:hover {
+  transform: translateY(-1px);
+}
+
+.totals-row {
+  background: rgba(127, 173, 87, 0.16);
+  color: #1d3321;
+  font-weight: 700;
+}
+
+.winner-row {
+  background: rgba(200, 68, 69, 0.14);
+  color: #6e2328;
+  font-weight: 700;
+}
+
+.buttons {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.8rem;
+  margin-top: 1rem;
+  min-width: 0;
+}
+
+.scorecard-action {
+  flex: 1 1 180px;
+  min-height: 48px;
+  padding: 0.8rem 1.15rem;
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #173946, #102125);
+  color: #f6f3eb;
+  cursor: pointer;
+  font-weight: 700;
+  text-align: center;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  transition:
+    transform 0.25s ease,
+    box-shadow 0.25s ease,
+    background 0.25s ease;
+}
+
+.scorecard-action:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 18px 28px rgba(16, 33, 37, 0.14);
+}
+
+.scorecard-action--muted {
+  background: linear-gradient(135deg, #8d4c42, #6a352d);
+}
+
+.scorecard-action--accent {
+  background: linear-gradient(135deg, #7fad57, #537133);
 }
 
 .remove-player-btn {
-  background: #db2b39;
-  color: #fff;
-  border: none;
-  border-radius: 50%;
-  width: 20px;
-  height: 20px;
-  cursor: pointer;
-  font-size: 0.8rem;
-  line-height: 1;
-  padding: 0;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.3s;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(200, 68, 69, 0.14);
+  color: #a7343c;
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 1;
+  transition:
+    transform 0.25s ease,
+    background-color 0.25s ease,
+    color 0.25s ease,
+    opacity 0.25s ease;
 }
 
-.remove-player-btn:hover {
-  background: #ff4b5c;
+.remove-player-btn:hover:not(:disabled) {
+  transform: scale(1.05);
+  background: rgba(200, 68, 69, 0.22);
+  color: #8f1f29;
 }
 
+.remove-player-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
 
-@media only screen and (max-width: 1024px) {
-  .scorecard-table th,
-  .scorecard-table td {
-    padding: 6px;
+@media only screen and (max-width: 900px) {
+  .scorecard-header {
+    flex-direction: column;
+    align-items: stretch;
   }
 
-  .score-input {
-    width: 45px;
+  .scorecard-header__stats {
+    width: 100%;
   }
 
-    .player-name-wrapper {
-    flex-direction: row; /* sigue horizontal */
-    gap: 3px; /* un poco menos de espacio */
-  }
-
-  .remove-player-btn {
-    width: 18px;
-    height: 18px;
-    font-size: 0.7rem;
-  }
-
-  .player-name {
-    font-size: 0.9rem;
+  .scorecard-stat {
+    flex: 1;
   }
 }
 
 @media only screen and (max-width: 768px) {
-  .scorecard-header {
-    flex-direction: column;
+  .scorecard-container {
+    padding: 0.9rem;
+    border-radius: 24px;
+  }
+
+  .scorecard-container::before {
+    background-size: 76%;
+    opacity: 0.07;
+  }
+
+  .scorecard-header__brand {
     align-items: flex-start;
   }
 
   .scorecard-logo {
-    margin-bottom: 10px;
+    width: 50px;
+    height: 50px;
+  }
+
+  .scorecard-table th,
+  .scorecard-table td {
+    padding: 0.62rem 0.45rem;
+  }
+
+  .scorecard-table {
+    min-width: 560px;
+  }
+
+  .player-header {
+    min-width: 112px;
   }
 
   .score-input {
-    width: 40px;
+    width: 48px;
+    padding-inline: 0.4rem;
   }
 
-  .player-name-wrapper {
-    flex-direction: row;
-    gap: 2px;
+  .scorecard-scroll-note {
+    display: block;
   }
 
-  .remove-player-btn {
-    width: 16px;
-    height: 16px;
-    font-size: 0.65rem;
+  .buttons {
+    flex-direction: column;
   }
 
-  .player-name {
-    font-size: 0.8rem;
+  .scorecard-action {
+    width: 100%;
+    flex-basis: 100%;
+  }
+}
+
+@media only screen and (max-width: 420px) {
+  .scorecard-container {
+    padding: 0.75rem;
+    border-radius: 20px;
+  }
+
+  .scorecard-header {
+    gap: 0.85rem;
+  }
+
+  .scorecard-header__brand {
+    gap: 0.7rem;
+  }
+
+  .scorecard-header__brand h2 {
+    font-size: 1.12rem;
+  }
+
+  .scorecard-kicker {
+    font-size: 0.66rem;
+  }
+
+  .scorecard-logo {
+    width: 44px;
+    height: 44px;
+    border-radius: 14px;
+  }
+
+  .scorecard-header__stats {
+    gap: 0.55rem;
+  }
+
+  .scorecard-stat {
+    padding: 0.65rem 0.6rem;
+    border-radius: 16px;
+  }
+
+  .scorecard-table {
+    min-width: 520px;
+  }
+
+  .hole-col {
+    width: 58px;
   }
 }

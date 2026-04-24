@@ -1,103 +1,110 @@
-/* Nuevo estilo para la página completa */
-.novedad-page {
-  min-height: 100vh; /* cubre toda la altura de la ventana */
-  display: flex;
-  flex-direction: column;
-  background: linear-gradient(135deg, #fcf4eb, #b4c4d0);
-}
-
-/* Ajusta tu sección para que se vea centrada verticalmente si quieres */
 .novedades-section {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-start; /* si quieres arriba */
-  align-items: center;
-  padding: 60px 20px;
-  text-align: center;
-}
-
-
-.novedades-section {
-  padding: 60px 20px;
-  background: linear-gradient(135deg, #fcf4eb, #b4c4d0);
-  text-align: center;
-}
-
-.novedades-title {
-  font-size: 2.5rem;
-  margin-bottom: 40px;
-  color: #333;
-  font-weight: 700;
-  font-family: 'Titillium Web', sans-serif;
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 4.5rem 1.5rem 1.5rem;
 }
 
 .novedades-container {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 30px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1.2rem;
 }
 
 .novedad-card {
-  background: #fff;
-  border-radius: 15px;
   overflow: hidden;
-  width: 300px;
-  transition: transform 0.3s, box-shadow 0.3s;
-  cursor: pointer;
+  border-radius: 28px;
+  background: rgba(255, 255, 255, 0.84);
+  border: 1px solid rgba(16, 33, 37, 0.08);
+  box-shadow: 0 20px 45px rgba(16, 33, 37, 0.08);
+  transition:
+    transform 0.3s ease,
+    box-shadow 0.3s ease;
 }
 
 .novedad-card:hover {
-  transform: translateY(-10px);
-  box-shadow: 0 15px 25px rgba(0,0,0,0.2);
+  transform: translateY(-8px);
+  box-shadow: 0 28px 60px rgba(16, 33, 37, 0.14);
+}
+
+.novedad-media {
+  position: relative;
+  padding: 1rem 1rem 0;
 }
 
 .novedad-img {
+  display: block;
   width: 100%;
-  height: 200px;
+  height: 250px;
   object-fit: cover;
+  border-radius: 22px;
+}
+
+.novedad-badge {
+  position: absolute;
+  top: 1.8rem;
+  left: 1.8rem;
+  display: inline-flex;
+  padding: 0.55rem 0.8rem;
+  border-radius: 999px;
+  background: rgba(8, 25, 28, 0.8);
+  color: #f7f2e8;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.novedad-content {
+  padding: 1.3rem 1.2rem 1.5rem;
 }
 
 .novedad-titulo {
-  font-size: 1.5rem;
-  margin: 15px 0 10px 0;
-  color: #1a1a1a;
+  margin: 0 0 0.6rem;
+  color: #102125;
+  font-family: "Sora", sans-serif;
+  font-size: 1.28rem;
 }
 
 .novedad-descripcion {
-  font-size: 1rem;
-  padding: 0 15px 20px 15px;
-  color: #555;
+  margin: 0;
+  color: #5a696e;
+  line-height: 1.75;
 }
 
-/* Responsive tablets */
+.novedades-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 52px;
+  margin: 2rem auto 0;
+  padding: 0.9rem 1.5rem;
+  border-radius: 999px;
+  background: #102125;
+  color: #f7f2e8;
+  font-weight: 700;
+  text-decoration: none;
+  transition:
+    transform 0.25s ease,
+    box-shadow 0.25s ease;
+}
+
+.novedades-link:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 16px 30px rgba(16, 33, 37, 0.18);
+}
+
 @media only screen and (max-width: 1024px) {
   .novedades-container {
-    gap: 20px;
-  }
-  .novedad-card {
-    width: 45%; /* dos por fila */
+    grid-template-columns: 1fr;
   }
 }
 
-/* Responsive móviles */
 @media only screen and (max-width: 768px) {
-  .novedades-container {
-    flex-direction: column;
-    align-items: center;
-    gap: 20px;
+  .novedades-section {
+    padding: 3.25rem 1rem 1rem;
   }
-  .novedad-card {
-    width: 90%; /* ocupa casi todo el ancho */
-  }
-  .novedades-title {
-    font-size: 2rem;
-  }
-  .novedad-titulo {
-    font-size: 1.3rem;
-  }
-  .novedad-descripcion {
-    font-size: 0.95rem;
+
+  .novedad-img {
+    height: 220px;
   }
 }

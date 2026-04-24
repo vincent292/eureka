@@ -1,83 +1,177 @@
 /* src/styles/pdf.css */
-/* Esta hoja se aplica temporalmente al <body> cuando exportamos (se añade clase pdf-export) */
 body.pdf-export {
-  background: #fcf4eb !important;
+  background: #f6f3eb !important;
 }
 
-/* Estilos específicos para la versión exportada de las scorecards */
 body.pdf-export .scorecard-container {
-  background: #ffffff;
-  border-radius: 8px;
-  box-shadow: 0 8px 20px rgba(11, 49, 82, 0.08);
-  border: 2px solid #e6efe8; /* sutil */
-  padding: 12px;
+  overflow: visible !important;
+  width: 980px !important;
+  max-width: 980px !important;
+  padding: 26px !important;
+  border: 1px solid #dbe5d4 !important;
+  border-radius: 22px !important;
+  background: #fffdf8 !important;
+  box-shadow: none !important;
 }
 
-/* Cabecera */
+body.pdf-export .scorecard-container::before {
+  background-size: 42% !important;
+  opacity: 0.035 !important;
+}
+
 body.pdf-export .scorecard-header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding-bottom: 8px;
-  border-bottom: 1px dashed #b4c4d0;
-  margin-bottom: 8px;
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 18px !important;
+  margin-bottom: 18px !important;
+  padding-bottom: 16px !important;
+  border-bottom: 1px solid #dbe5d4 !important;
+}
+
+body.pdf-export .scorecard-header__brand {
+  align-items: center !important;
 }
 
 body.pdf-export .scorecard-logo {
-  width: 56px;
-  height: 56px;
-  object-fit: contain;
-  opacity: 0.95;
+  width: 62px !important;
+  height: 62px !important;
+  border-radius: 16px !important;
+  object-fit: contain !important;
+  box-shadow: none !important;
 }
 
-/* Tabla */
+body.pdf-export .scorecard-kicker {
+  color: #537133 !important;
+  font-size: 12px !important;
+  letter-spacing: 1px !important;
+}
+
+body.pdf-export .scorecard-header__brand h2 {
+  color: #102125 !important;
+  font-size: 26px !important;
+  line-height: 1.1 !important;
+}
+
+body.pdf-export .scorecard-header__stats {
+  display: flex !important;
+  flex-direction: row !important;
+  gap: 10px !important;
+  width: auto !important;
+}
+
+body.pdf-export .scorecard-stat {
+  min-width: 96px !important;
+  padding: 12px 14px !important;
+  border: 1px solid #dbe5d4 !important;
+  border-radius: 14px !important;
+  background: #f7fbf1 !important;
+}
+
+body.pdf-export .scorecard-stat strong {
+  color: #102125 !important;
+  font-size: 18px !important;
+}
+
+body.pdf-export .scorecard-stat span {
+  color: #58676b !important;
+  font-size: 12px !important;
+}
+
+body.pdf-export .scorecard-scroll-note,
+body.pdf-export .buttons,
+body.pdf-export .remove-player-btn,
+body.pdf-export .nav-btn,
+body.pdf-export .site-header {
+  display: none !important;
+}
+
+body.pdf-export .scorecard-table-shell {
+  overflow: visible !important;
+  border: 1px solid #dbe5d4 !important;
+  border-radius: 16px !important;
+  background: #ffffff !important;
+}
+
 body.pdf-export .scorecard-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 10px;
-  color: #0b3152;
+  width: 100% !important;
+  min-width: 0 !important;
+  table-layout: fixed !important;
+  border-collapse: separate !important;
+  border-spacing: 0 !important;
+  background: #ffffff !important;
+  color: #102125 !important;
+  font-size: 14px !important;
 }
 
 body.pdf-export .scorecard-table th,
 body.pdf-export .scorecard-table td {
-  padding: 6px 8px;
-  border-bottom: 1px solid #f0f0f0;
+  padding: 12px 10px !important;
+  border: 0 !important;
+  border-right: 1px solid #e4eadf !important;
+  border-bottom: 1px solid #e4eadf !important;
+  text-align: center !important;
+}
+
+body.pdf-export .scorecard-table tr:last-child td {
+  border-bottom: 0 !important;
+}
+
+body.pdf-export .scorecard-table th:last-child,
+body.pdf-export .scorecard-table td:last-child {
+  border-right: 0 !important;
 }
 
 body.pdf-export .hole-col {
-  background: #f6f9fb;
-  color: #0b3152;
-  font-weight: 700;
+  position: static !important;
+  width: 76px !important;
+  background: #102125 !important;
+  color: #fffdf8 !important;
+  font-weight: 800 !important;
 }
 
-/* Nombres */
-body.pdf-export .player-name {
-  border: none;
-  background: transparent;
-  font-weight: 700;
-  color: #0b3152;
+body.pdf-export .player-header {
+  min-width: 0 !important;
+  background: #f7fbf1 !important;
 }
 
-/* Totales y ganador */
+body.pdf-export .player-name-wrapper {
+  display: block !important;
+}
+
+body.pdf-export .player-name,
+body.pdf-export .score-input {
+  width: 100% !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: #102125 !important;
+  font-weight: 800 !important;
+  text-align: center !important;
+  transform: none !important;
+}
+
+body.pdf-export .score-input {
+  font-weight: 700 !important;
+}
+
 body.pdf-export .totals-row td {
-  font-weight: 800;
-  color: #c84445;
+  background: #edf6e4 !important;
+  color: #1d3321 !important;
+  font-weight: 900 !important;
 }
 
 body.pdf-export .winner-row td {
-  font-weight: 700;
-  color: #7fad57;
+  background: #f9e6e4 !important;
+  color: #6e2328 !important;
+  font-weight: 900 !important;
 }
 
-/* Botones se ocultan en PDF */
-body.pdf-export .buttons,
-body.pdf-export .remove-player-btn,
-body.pdf-export .nav-btn {
-  display: none !important;
-}
-
-/* Ajustes móviles dentro del PDF export (si se renderiza en vista pequeña) */
-@media print, (max-width: 768px) {
-  body.pdf-export .scorecard-logo { width: 46px; height: 46px; }
-  body.pdf-export .scorecard-table { font-size: 9px; }
+body.pdf-export .winner-row .hole-col,
+body.pdf-export .totals-row .hole-col {
+  background: #102125 !important;
+  color: #fffdf8 !important;
 }

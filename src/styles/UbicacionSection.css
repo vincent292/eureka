@@ -1,89 +1,111 @@
 .ubicacion-section {
-  background: linear-gradient(135deg, #fcf4eb, #b4c4d0);
-  padding: 4rem 2rem;
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 4.5rem 1.5rem 1.5rem;
 }
 
-.ubicacion-container {
-  display: flex;
-  justify-content: space-between;
+.ubicacion-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.15fr);
+  gap: 1.3rem;
   align-items: stretch;
-  gap: 2rem;
-  max-width: 1200px;
-  margin: 0 auto;
+}
+
+.ubicacion-texto,
+.ubicacion-mapa {
+  overflow: hidden;
+  border-radius: 30px;
+  border: 1px solid rgba(16, 33, 37, 0.08);
+  box-shadow: 0 22px 50px rgba(16, 33, 37, 0.08);
 }
 
 .ubicacion-texto {
-  flex: 1;
   display: flex;
   flex-direction: column;
   justify-content: center;
-  padding: 2rem;
-  background: white;
-  border-radius: 16px;
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.15);
+  padding: clamp(1.8rem, 4vw, 2.8rem);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(241, 245, 235, 0.9));
 }
 
-.ubicacion-texto h2 {
-  font-size: 2.4rem;
-  margin-bottom: 1rem;
-  color: #0b3152;
+.ubicacion-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.8rem;
+  margin-top: 1.6rem;
 }
 
-.ubicacion-texto p {
-  font-size: 1.2rem;
-  line-height: 1.6;
-  color: #333;
+.ubicacion-pills span {
+  padding: 0.7rem 0.95rem;
+  border-radius: 999px;
+  background: rgba(127, 173, 87, 0.12);
+  color: #2e4735;
+  font-size: 0.92rem;
+  font-weight: 500;
+}
+
+.ubicacion-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  min-height: 52px;
+  margin-top: 1.8rem;
+  padding: 0.9rem 1.35rem;
+  border-radius: 999px;
+  background: #102125;
+  color: #f7f2e8;
+  font-weight: 700;
+  text-decoration: none;
+  transition:
+    transform 0.25s ease,
+    box-shadow 0.25s ease;
+}
+
+.ubicacion-link:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 18px 34px rgba(16, 33, 37, 0.18);
 }
 
 .ubicacion-mapa {
-  flex: 1.5;
-  min-height: 350px;
-   height: 550px; /* más alto en desktop */
-  border-radius: 16px;
-  overflow: hidden;
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25);
+  min-height: 520px;
 }
 
 .ubicacion-mapa iframe {
   display: block;
   width: 100%;
   height: 100%;
-  min-height: 350px; /* asegura altura mínima en móvil */
+  min-height: 520px;
   border: none;
+  filter: saturate(1.05) contrast(1.02);
 }
 
-
-/* Responsivo */
 @media only screen and (max-width: 1024px) {
-  .ubicacion-container {
-    flex-direction: column;
-    text-align: center;
+  .ubicacion-shell {
+    grid-template-columns: 1fr;
   }
 
-  .ubicacion-texto {
-    margin-bottom: 2rem;
-  }
-
-  .ubicacion-mapa {
-    min-height: 450px;
+  .ubicacion-mapa,
+  .ubicacion-mapa iframe {
+    min-height: 420px;
   }
 }
 
 @media only screen and (max-width: 768px) {
   .ubicacion-section {
-    padding: 2rem 1rem;
+    padding: 3.25rem 1rem 1rem;
   }
 
-  .ubicacion-texto h2 {
-    font-size: 2rem;
-  }
-
-  .ubicacion-texto p {
-    font-size: 1rem;
-  }
-
+  .ubicacion-texto,
   .ubicacion-mapa {
-    min-height: 350px;
+    border-radius: 24px;
+  }
 
+  .ubicacion-link {
+    width: 100%;
+  }
+
+  .ubicacion-mapa,
+  .ubicacion-mapa iframe {
+    min-height: 340px;
   }
 }

@@ -1,57 +1,155 @@
-import { useEffect, useState, useRef, useCallback } from "react";
-import ScoreCard from "../components/ScoreCard";
-import PDFExportButton from "../components/PDFExportButton";
+import { useCallback, useEffect, useRef, useState } from "react"
+import { gsap } from "gsap"
+import ScoreCard from "../components/ScoreCard"
+import PDFExportButton from "../components/PDFExportButton"
+import "../styles/Score.css"
 
 export default function Score() {
-  const [cards, setCards] = useState<number[]>([1]);
-  const scorecardRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const [cards, setCards] = useState<number[]>([1])
+  const pageRef = useRef<HTMLDivElement | null>(null)
+  const scorecardRefs = useRef<(HTMLDivElement | null)[]>([])
+  const previousCardsCount = useRef(cards.length)
 
   const addCard = () => {
-    setCards(prev => [...prev, prev.length + 1]);
-  };
+    setCards((prev) => [...prev, prev.length + 1])
+  }
 
-  // Callback ref para cada scorecard
   const setScorecardRef = useCallback((index: number) => {
-    return (el: HTMLDivElement | null) => {
-      scorecardRefs.current[index] = el;
-    };
-  }, []);
+    return (element: HTMLDivElement | null) => {
+      scorecardRefs.current[index] = element
+    }
+  }, [])
 
-  // Limpia refs si cambia el número de cards
   useEffect(() => {
-    scorecardRefs.current = scorecardRefs.current.slice(0, cards.length);
-  }, [cards.length]);
+    scorecardRefs.current = scorecardRefs.current.slice(0, cards.length)
+  }, [cards.length])
+
+  useEffect(() => {
+    const ctx = gsap.context(() => {
+      const intro = gsap.timeline({
+        defaults: { ease: "power3.out" },
+      })
+
+      intro
+        .from(".score-hero__eyebrow", {
+          y: 18,
+          autoAlpha: 0,
+          duration: 0.45,
+        })
+        .from(
+          ".score-hero__title-line",
+          {
+            y: 42,
+            autoAlpha: 0,
+            duration: 0.8,
+            stagger: 0.1,
+          },
+          "-=0.15",
+        )
+        .from(
+          ".score-hero__description",
+          {
+            y: 24,
+            autoAlpha: 0,
+            duration: 0.6,
+          },
+          "-=0.45",
+        )
+        .from(
+          ".score-export-controls",
+          {
+            y: 28,
+            autoAlpha: 0,
+            duration: 0.65,
+          },
+          "-=0.2",
+        )
+        .from(
+          ".score-card-shell",
+          {
+            y: 30,
+            autoAlpha: 0,
+            duration: 0.65,
+            stagger: 0.08,
+          },
+          "-=0.25",
+        )
+    }, pageRef)
+
+    return () => ctx.revert()
+  }, [])
+
+  useEffect(() => {
+    if (cards.length <= previousCardsCount.current) {
+      previousCardsCount.current = cards.length
+      return
+    }
+
+    const ctx = gsap.context(() => {
+      const lastCard = document.querySelector<HTMLElement>(".score-card-shell:last-child")
+
+      if (lastCard) {
+        gsap.fromTo(
+          lastCard,
+          {
+            y: 40,
+            autoAlpha: 0,
+            scale: 0.985,
+          },
+          {
+            y: 0,
+            autoAlpha: 1,
+            scale: 1,
+            duration: 0.65,
+            ease: "power3.out",
+          },
+        )
+      }
+    }, pageRef)
+
+    previousCardsCount.current = cards.length
+
+    return () => ctx.revert()
+  }, [cards.length])
 
   return (
-    <div style={{ padding: 16 }}>
-      <h1 style={{ textAlign: "center" }}>Score Page</h1>
+    <div className="score-page" ref={pageRef}>
+      <div className="score-page__glow score-page__glow--left" />
+      <div className="score-page__glow score-page__glow--right" />
 
-      {/* Botón exportar PDF */}
-      <div style={{ textAlign: "center", marginBottom: 20 }}>
-        <PDFExportButton scorecardRefs={scorecardRefs.current.filter(Boolean)} />
-      </div>
-
-      {/* Scorecards */}
-      <div>
-        {cards.map((id, index) => (
-          <div key={id} style={{ marginBottom: "2rem" }}>
-            <ScoreCard
-              id={id}
-              setRef={setScorecardRef(index)}
-            />
+      <div className="score-page__shell">
+        <section className="score-hero">
+          <div className="score-hero__copy">
+            <span className="score-hero__eyebrow">Recuerdo de la partida</span>
+            <h1 className="score-hero__title">
+              <span className="score-hero__title-line">
+                Exporta tu score en PDF
+              </span>
+              <span className="score-hero__title-line">con una foto opcional</span>
+            </h1>
+            <p className="score-hero__description">
+              Genera una version lista para guardar o compartir con todos los
+              scorecards de la ronda en un solo archivo.
+            </p>
           </div>
-        ))}
-      </div>
 
-      {/* Agregar nuevas scorecards */}
-      <div style={{ textAlign: "center", marginTop: 20 }}>
-        <button
-          onClick={addCard}
-          style={{ padding: "8px 16px", borderRadius: 8 }}
-        >
-          + Nuevo Score Card
-        </button>
+          <PDFExportButton scorecardRefs={scorecardRefs.current.filter(Boolean)} />
+        </section>
+
+        <section className="score-page__cards">
+          {cards.map((id, index) => (
+            <div key={id} className="score-card-shell">
+              <ScoreCard id={id} setRef={setScorecardRef(index)} />
+            </div>
+          ))}
+        </section>
+
+        <div className="score-page__footer">
+          <button type="button" className="score-page__add-button" onClick={addCard}>
+            + Nueva scorecard
+          </button>
+        </div>
       </div>
     </div>
-  );
+  )
 }
