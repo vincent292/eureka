@@ -13,6 +13,18 @@
   margin-bottom: 20px;
 }
 
+.admin-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 20px;
+}
+
+.admin-header .admin-title {
+  margin-bottom: 0;
+}
+
 .loading {
   text-align: center;
   color: #6b7280;
@@ -31,6 +43,68 @@
   padding: 10px;
   border: 1px solid #ccc;
   border-radius: 6px;
+}
+
+.admin-panel-section {
+  margin: 0 0 20px;
+  padding: 18px;
+  border-radius: 14px;
+  background: #ffffff;
+  box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.08);
+}
+
+.admin-panel-section h2 {
+  margin: 0 0 6px;
+  color: #1f513d;
+}
+
+.admin-panel-section p {
+  margin: 0 0 14px;
+  color: #6b7280;
+}
+
+.admin-price-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.admin-price-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 110px auto;
+  gap: 10px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+}
+
+.admin-price-card div {
+  display: grid;
+  gap: 2px;
+}
+
+.admin-price-card strong {
+  color: #111827;
+}
+
+.admin-price-card span {
+  color: #6b7280;
+  font-size: 13px;
+}
+
+.admin-price-card input {
+  min-height: 40px;
+  width: 100%;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 8px;
+}
+
+.admin-price-message {
+  margin-top: 12px !important;
+  color: #2d6a4f !important;
+  font-weight: 700;
 }
 
 .table-container {
@@ -115,6 +189,15 @@ button {
 
 /* Tablets chicas y móviles (≤768px) */
 @media only screen and (max-width: 768px) {
+  .admin-header,
+  .admin-price-card {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-header {
+    display: grid;
+  }
+
   .contacts-table {
     display: block;
     border: 0;

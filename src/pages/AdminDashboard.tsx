@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react"
+import { useNavigate } from "react-router-dom"
 import { supabase } from "../lib/supabaseClient";
 import "../styles/AdminDashboard.css"
 
@@ -11,7 +12,15 @@ type Contact = {
   deleted: boolean
 }
 
+type DurationPrice = {
+  id: string
+  label: string
+  duration_minutes: number
+  price: number
+}
+
 export default function AdminDashboard() {
+  const navigate = useNavigate()
   const [contacts, setContacts] = useState<Contact[]>([])
   const [loading, setLoading] = useState(true)
   const [promoMessage, setPromoMessage] = useState(
@@ -20,6 +29,8 @@ export default function AdminDashboard() {
   const [editId, setEditId] = useState<number | null>(null)
   const [editPhone, setEditPhone] = useState("")
   const [editEmail, setEditEmail] = useState("")
+  const [durationPrices, setDurationPrices] = useState<DurationPrice[]>([])
+  const [priceMessage, setPriceMessage] = useState("")
 
   const fetchContacts = async () => {
     setLoading(true)
@@ -77,13 +88,57 @@ export default function AdminDashboard() {
     window.open(url, "_blank")
   }
 
+  const fetchDurationPrices = async () => {
+    const { data, error } = await supabase
+      .from("booking_duration_prices")
+      .select("id, label, duration_minutes, price")
+      .eq("is_active", true)
+      .order("sort_order", { ascending: true })
+
+    if (error) {
+      console.error(error)
+      return
+    }
+
+    setDurationPrices((data || []) as DurationPrice[])
+  }
+
+  const updateDurationPrice = async (id: string, price: number) => {
+    setPriceMessage("")
+
+    const { error } = await supabase
+      .from("booking_duration_prices")
+      .update({ price })
+      .eq("id", id)
+
+    if (error) {
+      setPriceMessage("No se pudo guardar el precio.")
+      console.error(error)
+      return
+    }
+
+    setPriceMessage("Precio actualizado.")
+    fetchDurationPrices()
+  }
+
+  const signOut = async () => {
+    await supabase.auth.signOut()
+    navigate("/admin/login", { replace: true })
+  }
+
   useEffect(() => {
     fetchContacts()
+    fetchDurationPrices()
   }, [])
 
   return (
     <div className="admin-container">
-      <h1 className="admin-title">Panel de Administración - Contactos</h1>
+      <div className="admin-header">
+        <h1 className="admin-title">Panel de Administración - Contactos</h1>
+        <button type="button" className="btn-delete" onClick={signOut}>
+          Cerrar sesion
+        </button>
+      </div>
 
       <div className="promo-box">
         <input
@@ -93,6 +148,46 @@ export default function AdminDashboard() {
           placeholder="Escribe tu mensaje promocional"
         />
       </div>
+
+      <section className="admin-panel-section">
+        <h2>Precios de reservas</h2>
+        <p>Estos montos definen el total que ve el cliente al elegir duración.</p>
+
+        <div className="admin-price-grid">
+          {durationPrices.map((duration) => (
+            <div className="admin-price-card" key={duration.id}>
+              <div>
+                <strong>{duration.label}</strong>
+                <span>{duration.duration_minutes} minutos</span>
+              </div>
+              <input
+                type="number"
+                min="0"
+                step="0.5"
+                value={duration.price}
+                onChange={(event) =>
+                  setDurationPrices((current) =>
+                    current.map((item) =>
+                      item.id === duration.id
+                        ? { ...item, price: Number(event.target.value) }
+                        : item,
+                    ),
+                  )
+                }
+              />
+              <button
+                type="button"
+                className="btn-edit"
+                onClick={() => updateDurationPrice(duration.id, Number(duration.price))}
+              >
+                Guardar
+              </button>
+            </div>
+          ))}
+        </div>
+
+        {priceMessage ? <p className="admin-price-message">{priceMessage}</p> : null}
+      </section>
 
       {loading ? (
         <p className="loading">Cargando...</p>

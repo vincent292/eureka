@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Link } from "react-router-dom"
 import { gsap } from "gsap"
 import { ScrollTrigger } from "gsap/ScrollTrigger"
@@ -6,20 +6,38 @@ import HeroCarousel from "../components/HeroCarousel"
 import UbicacionSection from "../components/UbicacionSection"
 import Novedades from "../components/Novedades"
 import PedidosYA from "../components/PedidosYA"
+import { fetchHeroSlides } from "../lib/contentService"
 import "../styles/Landing.css"
 
 gsap.registerPlugin(ScrollTrigger)
 
+const fallbackImages = [
+  "image/hero/hero1.webp",
+  "image/hero/hero2.webp",
+  "image/hero/hero3.webp",
+  "image/hero/hero4.webp",
+  "image/hero/hero5.webp",
+]
+
 export default function Landing() {
   const landingRef = useRef<HTMLDivElement | null>(null)
+  const [images, setImages] = useState(fallbackImages)
 
-  const images = [
-    "image/hero/hero1.webp",
-    "image/hero/hero2.webp",
-    "image/hero/hero3.webp",
-    "image/hero/hero4.webp",
-    "image/hero/hero5.webp",
-  ]
+  useEffect(() => {
+    let isMounted = true
+
+    fetchHeroSlides().then((slides) => {
+      if (!isMounted || slides.length === 0) {
+        return
+      }
+
+      setImages(slides.map((slide) => slide.imagePath))
+    })
+
+    return () => {
+      isMounted = false
+    }
+  }, [])
 
   useEffect(() => {
     const ctx = gsap.context(() => {

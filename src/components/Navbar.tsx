@@ -45,6 +45,12 @@ function Navbar() {
             Score
           </NavLink>
           <NavLink
+            to="/reservas"
+            className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}
+          >
+            Reservas
+          </NavLink>
+          <NavLink
             to="/NovedadPage"
             className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}
           >
