@@ -14,6 +14,7 @@ export interface BookingDurationPrice {
   id: string
   label: string
   durationMinutes: number
+  personCount: number
   price: number
 }
 
@@ -47,6 +48,7 @@ type BookingDurationPriceRow = {
   id: string
   label: string
   duration_minutes: number
+  person_count: number
   price: number
 }
 
@@ -60,7 +62,7 @@ type BookingRpcRow = {
 export async function fetchBookingDurationPrices(): Promise<BookingDurationPrice[]> {
   const { data, error } = await supabase
     .from("booking_duration_prices")
-    .select("id, label, duration_minutes, price")
+    .select("id, label, duration_minutes, person_count, price")
     .eq("is_active", true)
     .order("sort_order", { ascending: true })
     .order("duration_minutes", { ascending: true })
@@ -74,6 +76,7 @@ export async function fetchBookingDurationPrices(): Promise<BookingDurationPrice
     id: item.id,
     label: item.label,
     durationMinutes: item.duration_minutes,
+    personCount: item.person_count,
     price: Number(item.price),
   }))
 }

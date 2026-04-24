@@ -12,8 +12,34 @@ import "../styles/Booking.css"
 
 const today = new Date().toISOString().slice(0, 10)
 const fallbackDurations: BookingDurationPrice[] = [
-  { id: "duration-30", label: "30 minutos", durationMinutes: 30, price: 50 },
-  { id: "duration-60", label: "1 hora", durationMinutes: 60, price: 100 },
+  {
+    id: "duration-60-1",
+    label: "1 hora / 1 persona",
+    durationMinutes: 60,
+    personCount: 1,
+    price: 30,
+  },
+  {
+    id: "duration-60-2",
+    label: "1 hora / 2 personas",
+    durationMinutes: 60,
+    personCount: 2,
+    price: 50,
+  },
+  {
+    id: "duration-180-1",
+    label: "3 horas / 1 persona",
+    durationMinutes: 180,
+    personCount: 1,
+    price: 40,
+  },
+  {
+    id: "duration-180-2",
+    label: "3 horas / 2 personas",
+    durationMinutes: 180,
+    personCount: 2,
+    price: 70,
+  },
 ]
 
 export default function Booking() {
@@ -46,6 +72,7 @@ export default function Booking() {
       if (prices.length > 0) {
         setDurationPrices(prices)
         setDurationMinutes(prices[0].durationMinutes)
+        setPartySize(prices[0].personCount)
       }
     })
 
@@ -56,7 +83,7 @@ export default function Booking() {
 
   const selectedQr = paymentQrs.find((qr) => qr.id === selectedQrId) || null
   const selectedDuration = durationPrices.find(
-    (item) => item.durationMinutes === durationMinutes,
+    (item) => item.durationMinutes === durationMinutes && item.personCount === partySize,
   )
   const totalAmount = selectedDuration?.price || 0
   const amountDue = useMemo(
@@ -104,7 +131,7 @@ export default function Booking() {
           <span className="booking-eyebrow">Reservas Eureka</span>
           <h1>Elige tu horario y asegura tu partida</h1>
           <p>
-            Las reservas se toman en bloques de 30 minutos o 1 hora. Cada horario
+            Las reservas usan las opciones configuradas por administracion. Cada horario
             permite hasta 3 reservas en paralelo y queda pendiente mientras se
             verifica el pago.
           </p>
@@ -141,17 +168,6 @@ export default function Booking() {
             </label>
 
             <label>
-              Personas
-              <input
-                type="number"
-                min="1"
-                value={partySize}
-                onChange={(event) => setPartySize(Number(event.target.value))}
-                required
-              />
-            </label>
-
-            <label>
               Fecha
               <input
                 type="date"
@@ -179,8 +195,16 @@ export default function Booking() {
               <button
                 key={duration.id}
                 type="button"
-                className={durationMinutes === duration.durationMinutes ? "active" : ""}
-                onClick={() => setDurationMinutes(duration.durationMinutes)}
+                className={
+                  durationMinutes === duration.durationMinutes &&
+                  partySize === duration.personCount
+                    ? "active"
+                    : ""
+                }
+                onClick={() => {
+                  setDurationMinutes(duration.durationMinutes)
+                  setPartySize(duration.personCount)
+                }}
               >
                 {duration.label}
                 <span>Bs {duration.price.toFixed(2)}</span>

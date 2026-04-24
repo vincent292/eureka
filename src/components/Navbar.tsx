@@ -6,6 +6,7 @@ import "../styles/navbar.css"
 function Navbar() {
   const navRef = useRef<HTMLElement | null>(null)
   const location = useLocation()
+  const isAdminRoute = location.pathname.startsWith("/admin")
 
   const toggleNavbar = () => {
     navRef.current?.classList.toggle("responsive_nav")
@@ -18,6 +19,10 @@ function Navbar() {
   useEffect(() => {
     closeNavbar()
   }, [location.pathname])
+
+  if (isAdminRoute) {
+    return null
+  }
 
   return (
     <header className="site-header">

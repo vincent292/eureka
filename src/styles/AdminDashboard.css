@@ -1,117 +1,402 @@
-.admin-container {
-  padding: 30px;
-  background-color: #f9fafb;
+.admin-dashboard {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
   min-height: 100vh;
-  font-family: Arial, sans-serif;
+  background:
+    radial-gradient(circle at top right, rgba(248, 221, 153, 0.18), transparent 24%),
+    linear-gradient(180deg, #102125 0%, #eef3e6 38%, #f7f4ec 100%);
 }
 
-.admin-title {
-  font-size: 28px;
-  font-weight: bold;
-  text-align: center;
-  color: #2d6a4f;
-  margin-bottom: 20px;
+.admin-sidebar {
+  position: sticky;
+  top: 0;
+  display: grid;
+  align-content: start;
+  gap: 1.4rem;
+  min-height: 100vh;
+  padding: 1.4rem;
+  background: rgba(10, 29, 32, 0.96);
+  color: #f6f3eb;
 }
 
-.admin-header {
+.admin-sidebar__brand {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: 0.85rem;
+  align-items: center;
+  padding: 0.9rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.admin-sidebar__brand img {
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  object-fit: cover;
+}
+
+.admin-sidebar__brand strong {
+  display: block;
+  font-family: "Sora", sans-serif;
+}
+
+.admin-sidebar__brand span {
+  color: rgba(246, 243, 235, 0.7);
+  font-size: 0.88rem;
+}
+
+.admin-sidebar__nav {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.admin-sidebar__nav button {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  min-height: 50px;
+  padding: 0.85rem 1rem;
+  border: 0;
+  border-radius: 16px;
+  background: transparent;
+  color: rgba(246, 243, 235, 0.78);
+  cursor: pointer;
+  text-align: left;
+}
+
+.admin-sidebar__nav button.is-active {
+  background: linear-gradient(135deg, #7fad57, #537133);
+  color: #fffdf8;
+}
+
+.admin-main {
+  min-width: 0;
+  padding: 1.4rem;
+}
+
+.admin-topbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  margin-bottom: 20px;
+  margin-bottom: 1rem;
+  padding: 1rem 1.15rem;
+  border: 1px solid rgba(16, 33, 37, 0.08);
+  border-radius: 24px;
+  background: rgba(255, 253, 248, 0.86);
+  box-shadow: 0 20px 48px rgba(16, 33, 37, 0.08);
 }
 
-.admin-header .admin-title {
-  margin-bottom: 0;
+.admin-kicker {
+  color: #537133;
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
 }
 
-.loading {
-  text-align: center;
-  color: #6b7280;
-  font-size: 16px;
+.admin-topbar h1,
+.admin-section-heading h2 {
+  margin: 0.3rem 0 0;
+  color: #102125;
+  font-family: "Sora", sans-serif;
 }
 
-.promo-box {
-  margin-bottom: 20px;
+.admin-topbar__actions {
   display: flex;
-  justify-content: center;
-}
-
-.promo-box input {
-  width: 100%;
-  max-width: 500px;
-  padding: 10px;
-  border: 1px solid #ccc;
-  border-radius: 6px;
-}
-
-.admin-panel-section {
-  margin: 0 0 20px;
-  padding: 18px;
-  border-radius: 14px;
-  background: #ffffff;
-  box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.08);
-}
-
-.admin-panel-section h2 {
-  margin: 0 0 6px;
-  color: #1f513d;
-}
-
-.admin-panel-section p {
-  margin: 0 0 14px;
-  color: #6b7280;
-}
-
-.admin-price-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 12px;
-}
-
-.admin-price-card {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 110px auto;
-  gap: 10px;
   align-items: center;
-  padding: 12px;
-  border: 1px solid #e5e7eb;
-  border-radius: 12px;
+  gap: 0.75rem;
 }
 
-.admin-price-card div {
+.admin-date-filter {
   display: grid;
-  gap: 2px;
-}
-
-.admin-price-card strong {
-  color: #111827;
-}
-
-.admin-price-card span {
-  color: #6b7280;
-  font-size: 13px;
-}
-
-.admin-price-card input {
-  min-height: 40px;
-  width: 100%;
-  border: 1px solid #d1d5db;
-  border-radius: 8px;
-  padding: 8px;
-}
-
-.admin-price-message {
-  margin-top: 12px !important;
-  color: #2d6a4f !important;
+  gap: 0.3rem;
+  color: #58676b;
+  font-size: 0.82rem;
   font-weight: 700;
 }
 
+.admin-date-filter input,
+.admin-reservation-card textarea,
+.admin-editor-card input,
+.admin-editor-card textarea,
+.admin-price-card input,
+.promo-box input,
+.contacts-table input {
+  width: 100%;
+  border: 1px solid rgba(16, 33, 37, 0.1);
+  border-radius: 12px;
+  padding: 0.75rem 0.85rem;
+  background: #ffffff;
+  color: #102125;
+  outline: none;
+}
+
+.admin-bell,
+.admin-signout,
+.btn-edit,
+.btn-approve,
+.btn-reject,
+.btn-whatsapp {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 46px;
+  padding: 0.8rem 1rem;
+  border: 0;
+  border-radius: 999px;
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.admin-bell {
+  position: relative;
+  width: 46px;
+  padding: 0;
+  background: rgba(16, 33, 37, 0.08);
+  color: #102125;
+}
+
+.admin-bell span {
+  position: absolute;
+  top: -5px;
+  right: -3px;
+  min-width: 20px;
+  min-height: 20px;
+  padding: 0 0.25rem;
+  border-radius: 999px;
+  background: #c84445;
+  color: #fffdf8;
+  font-size: 0.72rem;
+  line-height: 20px;
+}
+
+.admin-signout {
+  background: #102125;
+  color: #fffdf8;
+}
+
+.admin-toast,
+.admin-loading {
+  margin-bottom: 1rem;
+  padding: 0.9rem 1rem;
+  border-radius: 16px;
+  background: rgba(180, 224, 193, 0.2);
+  color: #102125;
+  font-weight: 700;
+}
+
+.admin-notifications,
+.admin-panel-card,
 .table-container {
-  overflow-x: auto;
-  background: white;
-  border-radius: 10px;
-  box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.1);
+  padding: 1rem;
+  border: 1px solid rgba(16, 33, 37, 0.08);
+  border-radius: 24px;
+  background: rgba(255, 253, 248, 0.88);
+  box-shadow: 0 20px 48px rgba(16, 33, 37, 0.08);
+}
+
+.admin-content {
+  display: grid;
+  gap: 1rem;
+}
+
+.admin-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.95rem;
+}
+
+.admin-stat-grid,
+.admin-split,
+.admin-reservation-grid,
+.admin-editor-grid,
+.admin-price-grid,
+.admin-calendar {
+  display: grid;
+  gap: 1rem;
+}
+
+.admin-stat-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.admin-stat-card {
+  padding: 1rem;
+  border-radius: 22px;
+  background: linear-gradient(145deg, rgba(16, 33, 37, 0.92), rgba(30, 66, 56, 0.86));
+  color: #fffdf8;
+}
+
+.admin-stat-card span {
+  display: block;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 0.84rem;
+}
+
+.admin-stat-card strong {
+  display: block;
+  margin-top: 0.5rem;
+  font-family: "Sora", sans-serif;
+  font-size: 1.85rem;
+}
+
+.admin-split {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.admin-booking-list,
+.admin-notification-list {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.admin-booking-card,
+.admin-notification-card,
+.admin-calendar-slot,
+.admin-reservation-card,
+.admin-editor-card {
+  padding: 0.95rem;
+  border: 1px solid rgba(16, 33, 37, 0.08);
+  border-radius: 18px;
+  background: #ffffff;
+}
+
+.admin-booking-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.admin-booking-card strong,
+.admin-calendar-slot strong,
+.admin-reservation-card strong,
+.admin-editor-card h3 {
+  color: #102125;
+  font-family: "Sora", sans-serif;
+}
+
+.admin-booking-card span,
+.admin-notification-card span,
+.admin-calendar-slot span,
+.admin-reservation-card p,
+.admin-editor-card label,
+.admin-price-card label {
+  color: #58676b;
+}
+
+.admin-booking-card__actions,
+.admin-reservation-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.admin-reservation-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.admin-reservation-card {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.admin-reservation-card__top,
+.admin-calendar-slot__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0.35rem 0.7rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.status-pill--pending_payment,
+.calendar-booking--pending_payment {
+  background: rgba(248, 221, 153, 0.28);
+  color: #8c6408;
+}
+
+.status-pill--confirmed,
+.calendar-booking--confirmed {
+  background: rgba(180, 224, 193, 0.28);
+  color: #2f6a3e;
+}
+
+.status-pill--rejected,
+.calendar-booking--rejected,
+.btn-reject {
+  background: rgba(200, 68, 69, 0.18);
+  color: #8b2730;
+}
+
+.status-pill--expired,
+.status-pill--cancelled {
+  background: rgba(16, 33, 37, 0.08);
+  color: #58676b;
+}
+
+.btn-edit {
+  background: #163a47;
+  color: #fffdf8;
+}
+
+.btn-approve {
+  background: #7fad57;
+  color: #fffdf8;
+}
+
+.btn-whatsapp {
+  background: #25d366;
+  color: #fffdf8;
+}
+
+.admin-calendar-slot__body {
+  display: grid;
+  gap: 0.65rem;
+  margin-top: 0.8rem;
+}
+
+.calendar-booking {
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.8rem;
+  border-radius: 14px;
+}
+
+.admin-price-grid--wide,
+.admin-editor-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.admin-price-card--stacked,
+.admin-editor-card,
+.admin-editor-card label,
+.admin-price-card label {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.admin-editor-grid--single {
+  grid-template-columns: 1fr;
+}
+
+.promo-box--panel {
+  margin-bottom: 1rem;
 }
 
 .contacts-table {
@@ -120,87 +405,62 @@
 }
 
 .contacts-table thead {
-  background-color: #2d6a4f;
-  color: white;
+  background: #102125;
+  color: #fffdf8;
 }
 
 .contacts-table th,
 .contacts-table td {
-  padding: 12px 15px;
+  padding: 0.9rem;
   text-align: left;
-  border-bottom: 1px solid #ddd;
+  border-bottom: 1px solid #e5e7eb;
 }
 
-.contacts-table tr:hover {
-  background-color: #f1f5f9;
-}
-
-button {
-  padding: 6px 12px;
-  margin: 2px;
-  border: none;
-  border-radius: 6px;
-  font-size: 14px;
-  cursor: pointer;
-  transition: background 0.3s ease;
-}
-
-.btn-edit {
-  background-color: #3b82f6;
-  color: white;
-}
-
-.btn-edit:hover {
-  background-color: #2563eb;
-}
-
-.btn-delete {
-  background-color: #dc2626;
-  color: white;
-}
-
-.btn-delete:hover {
-  background-color: #b91c1c;
-}
-
-.btn-whatsapp {
-  background-color: #25d366;
-  color: white;
-}
-
-.btn-whatsapp:hover {
-  background-color: #1da851;
-}
-
-/* --- RESPONSIVE --- */
-
-/* Tablets grandes (≤1024px) */
-@media only screen and (max-width: 1024px) {
-  .admin-title {
-    font-size: 24px;
-  }
-
-  .contacts-table th,
-  .contacts-table td {
-    padding: 10px;
-    font-size: 14px;
-  }
-}
-
-/* Tablets chicas y móviles (≤768px) */
-@media only screen and (max-width: 768px) {
-  .admin-header,
-  .admin-price-card {
+@media only screen and (max-width: 1200px) {
+  .admin-dashboard {
     grid-template-columns: 1fr;
   }
 
-  .admin-header {
+  .admin-sidebar {
+    position: static;
+    min-height: auto;
+  }
+}
+
+@media only screen and (max-width: 900px) {
+  .admin-topbar,
+  .admin-topbar__actions,
+  .admin-split,
+  .admin-stat-grid,
+  .admin-reservation-grid,
+  .admin-editor-grid,
+  .admin-price-grid--wide,
+  .admin-booking-card {
+    grid-template-columns: 1fr;
     display: grid;
   }
 
-  .contacts-table {
+  .admin-topbar__actions {
+    justify-items: stretch;
+  }
+
+  .admin-date-filter input,
+  .admin-signout {
+    width: 100%;
+  }
+}
+
+@media only screen and (max-width: 768px) {
+  .admin-main {
+    padding: 0.85rem;
+  }
+
+  .contacts-table,
+  .contacts-table tbody,
+  .contacts-table tr,
+  .contacts-table td {
     display: block;
-    border: 0;
+    width: 100%;
   }
 
   .contacts-table thead {
@@ -208,31 +468,18 @@ button {
   }
 
   .contacts-table tr {
-    display: block;
-    margin-bottom: 15px;
-    border: 1px solid #ddd;
-    border-radius: 8px;
-    background: #fff;
-    padding: 10px;
+    margin-bottom: 0.85rem;
+    border: 1px solid #e5e7eb;
+    border-radius: 14px;
+    overflow: hidden;
+    background: #ffffff;
   }
 
   .contacts-table td {
-    display: flex;
-    justify-content: space-between;
-    padding: 8px;
-    border: none;
-    font-size: 14px;
+    border-bottom: 1px solid #eef2f4;
   }
 
-  .contacts-table td::before {
-    content: attr(data-label);
-    font-weight: bold;
-    color: #374151;
-    margin-right: 10px;
-  }
-
-  button {
-   
-    margin: 5px 0;
+  .contacts-table td:last-child {
+    border-bottom: 0;
   }
 }
