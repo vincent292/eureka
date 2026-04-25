@@ -4,10 +4,13 @@ import {
   createBooking,
   fetchActivePaymentQrs,
   fetchBookingDurationPrices,
+  findReservationForChange,
+  rescheduleReservationTime,
   validateDiscountCode,
   type BookingDurationPrice,
   type DiscountValidationResult,
   type PaymentQr,
+  type ReservationChangeLookup,
 } from "../lib/bookingService"
 import "../styles/Booking.css"
 
@@ -30,6 +33,11 @@ type BookingDraft = {
   paymentReference: string
   discountCode: string
   appliedDiscount: DiscountValidationResult | null
+}
+
+type SuccessReservation = {
+  message: string
+  code: string
 }
 
 const initialDraft: BookingDraft = {
@@ -61,8 +69,14 @@ export default function Booking() {
   const [paymentProof, setPaymentProof] = useState<File | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [discountLoading, setDiscountLoading] = useState(false)
-  const [message, setMessage] = useState("")
+  const [successReservation, setSuccessReservation] = useState<SuccessReservation | null>(null)
   const [errorMessage, setErrorMessage] = useState("")
+  const [discountMessage, setDiscountMessage] = useState("")
+  const [changeCode, setChangeCode] = useState("")
+  const [changeTime, setChangeTime] = useState("")
+  const [changeLookup, setChangeLookup] = useState<ReservationChangeLookup | null>(null)
+  const [changeLoading, setChangeLoading] = useState(false)
+  const [changeMessage, setChangeMessage] = useState("")
 
   useEffect(() => {
     let isMounted = true
@@ -105,7 +119,7 @@ export default function Booking() {
       ["Hora", draft.time],
       ["Paquete", selectedPackage?.label || "-"],
       ["Subtotal", `Bs ${subtotal.toFixed(2)}`],
-      ["Descuento", `Bs ${discountAmount.toFixed(2)}`],
+      ["Descuento", discountAmount > 0 ? `- Bs ${discountAmount.toFixed(2)}` : "Bs 0.00"],
       ["Total a pagar", `Bs ${total.toFixed(2)}`],
     ],
     [discountAmount, draft.date, draft.time, selectedPackage?.label, subtotal, total],
@@ -114,6 +128,7 @@ export default function Booking() {
   const updateDraft = (patch: Partial<BookingDraft>) => {
     setDraft((current) => ({ ...current, ...patch }))
     setErrorMessage("")
+    if (!("appliedDiscount" in patch) || patch.appliedDiscount === null) setDiscountMessage("")
   }
 
   const handleNext = () => {
@@ -147,6 +162,7 @@ export default function Booking() {
     try {
       const result = await validateDiscountCode(draft.discountCode, selectedPackage.id)
       updateDraft({ discountCode: result.code, appliedDiscount: result })
+      setDiscountMessage(`${result.message}: - Bs ${result.discountAmount.toFixed(2)}`)
     } catch (error) {
       updateDraft({ appliedDiscount: null })
       setErrorMessage(error instanceof Error ? error.message : "No se pudo aplicar el descuento.")
@@ -172,6 +188,78 @@ export default function Booking() {
     setErrorMessage("")
   }
 
+  const handleQrDownload = async () => {
+    if (!selectedQr) return
+
+    try {
+      const response = await fetch(selectedQr.imagePath)
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement("a")
+      link.href = url
+      link.download = `${selectedQr.label || "qr-eureka"}.png`
+      link.click()
+      URL.revokeObjectURL(url)
+    } catch {
+      setErrorMessage("No se pudo descargar el QR.")
+    }
+  }
+
+  const handleReservationLookup = async () => {
+    if (!changeCode.trim()) {
+      setChangeMessage("")
+      setErrorMessage("Ingresa tu codigo de reserva para buscarla.")
+      return
+    }
+
+    setChangeLoading(true)
+    setErrorMessage("")
+    setChangeMessage("")
+
+    try {
+      const result = await findReservationForChange(changeCode)
+      setChangeLookup(result)
+      setChangeTime(new Date(result.startsAt).toTimeString().slice(0, 5))
+      setChangeMessage(
+        result.changeUsed
+          ? "Esta reserva ya uso su cambio de horario."
+          : "Reserva encontrada. Puedes cambiar la hora una sola vez.",
+      )
+    } catch (error) {
+      setChangeLookup(null)
+      setErrorMessage(error instanceof Error ? error.message : "No encontramos esa reserva.")
+    } finally {
+      setChangeLoading(false)
+    }
+  }
+
+  const handleReservationTimeChange = async () => {
+    if (!changeLookup || !changeTime) {
+      setErrorMessage("Busca tu reserva y elige una nueva hora.")
+      return
+    }
+
+    setChangeLoading(true)
+    setErrorMessage("")
+    setChangeMessage("")
+
+    try {
+      const result = await rescheduleReservationTime(changeLookup.reservationCode, changeTime)
+      setChangeLookup({
+        ...changeLookup,
+        startsAt: result.startsAt,
+        endsAt: result.endsAt,
+        status: result.status,
+        changeUsed: true,
+      })
+      setChangeMessage("Listo. Cambiamos la hora de tu reserva y avisamos al panel de administracion.")
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "No se pudo cambiar la hora.")
+    } finally {
+      setChangeLoading(false)
+    }
+  }
+
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!selectedPackage || !paymentProof) {
@@ -181,7 +269,7 @@ export default function Booking() {
 
     setSubmitting(true)
     setErrorMessage("")
-    setMessage("")
+    setSuccessReservation(null)
 
     try {
       const result = await createBooking({
@@ -203,7 +291,10 @@ export default function Booking() {
       setDraft(initialDraft)
       setPaymentProof(null)
       setStep(1)
-      setMessage(`${result.message} Codigo: ${result.reservationCode}`)
+      setSuccessReservation({
+        message: result.message,
+        code: result.reservationCode,
+      })
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "No se pudo registrar la reserva.")
     } finally {
@@ -221,6 +312,50 @@ export default function Booking() {
             Completa tus datos, elige el paquete, paga por QR y sube tu comprobante.
             Tu reserva quedara pendiente de verificacion.
           </p>
+          <div className="booking-change-card">
+            <strong>Ya tienes una reserva?</strong>
+            <p>Ingresa tu codigo para cambiar la hora una sola vez, manteniendo la misma fecha.</p>
+            <div>
+              <input
+                value={changeCode}
+                onChange={(event) => setChangeCode(event.target.value.toUpperCase())}
+                placeholder="AF02882069"
+              />
+              <button type="button" onClick={handleReservationLookup} disabled={changeLoading}>
+                {changeLoading ? "Buscando..." : "Buscar"}
+              </button>
+            </div>
+            {changeLookup ? (
+              <div className="booking-change-result">
+                <span>{changeLookup.fullName}</span>
+                <strong>
+                  {new Date(changeLookup.startsAt).toLocaleDateString("es-BO")} -{" "}
+                  {new Date(changeLookup.startsAt).toLocaleTimeString("es-BO", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </strong>
+                <label>
+                  Nueva hora
+                  <input
+                    type="time"
+                    step="1800"
+                    value={changeTime}
+                    disabled={changeLookup.changeUsed}
+                    onChange={(event) => setChangeTime(event.target.value)}
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={handleReservationTimeChange}
+                  disabled={changeLoading || changeLookup.changeUsed}
+                >
+                  Cambiar hora
+                </button>
+              </div>
+            ) : null}
+            {changeMessage ? <p className="booking-change-message">{changeMessage}</p> : null}
+          </div>
         </div>
 
         <form className="booking-form booking-form--wizard" onSubmit={handleSubmit}>
@@ -313,6 +448,7 @@ export default function Booking() {
                     {discountLoading ? "Aplicando..." : "Aplicar"}
                   </button>
                 </div>
+                {discountMessage ? <p className="booking-discount-success">{discountMessage}</p> : null}
               </div>
 
               <div className="booking-summary booking-summary--final">
@@ -335,6 +471,9 @@ export default function Booking() {
                       de pago o ingresa la referencia para que podamos verificar tu reserva.
                     </p>
                     {selectedQr.instructions ? <p>{selectedQr.instructions}</p> : null}
+                    <button type="button" className="booking-secondary-button booking-secondary-button--soft" onClick={handleQrDownload}>
+                      Descargar QR
+                    </button>
                   </div>
                 </div>
               ) : (
@@ -359,7 +498,6 @@ export default function Booking() {
           ) : null}
 
           {errorMessage ? <div className="booking-result booking-result--error">{errorMessage}</div> : null}
-          {message ? <div className="booking-result">{message}</div> : null}
 
           <div className="booking-actions">
             {step > 1 ? (
@@ -373,12 +511,42 @@ export default function Booking() {
               </button>
             ) : (
               <button className="booking-submit" type="submit" disabled={submitting}>
-                {submitting ? "Registrando..." : "Registrar reserva"}
+                {submitting ? (
+                  <span className="booking-golf-loader">
+                    <span aria-hidden="true" />
+                    Registrando reserva...
+                  </span>
+                ) : (
+                  "Registrar reserva"
+                )}
               </button>
             )}
           </div>
         </form>
       </section>
+
+      {successReservation ? (
+        <div className="booking-modal" role="dialog" aria-modal="true" aria-labelledby="booking-success-title">
+          <div className="booking-modal-card">
+            <div className="booking-modal-icon" aria-hidden="true">
+              <span />
+            </div>
+            <span className="booking-eyebrow booking-eyebrow--modal">Reserva recibida</span>
+            <h2 id="booking-success-title">Gracias por agendar tu reserva</h2>
+            <p>
+              {successReservation.message} Te enviaremos la confirmacion por WhatsApp cuando
+              revisemos el pago.
+            </p>
+            <div className="booking-code-card">
+              <span>Codigo de reserva</span>
+              <strong>{successReservation.code}</strong>
+            </div>
+            <button type="button" className="booking-submit" onClick={() => setSuccessReservation(null)}>
+              Perfecto, entendido
+            </button>
+          </div>
+        </div>
+      ) : null}
     </main>
   )
 }

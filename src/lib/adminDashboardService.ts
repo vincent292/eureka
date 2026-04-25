@@ -86,6 +86,23 @@ export interface AdminPedidosYaPromo {
   isActive: boolean
 }
 
+export interface AdminPaymentQr {
+  id: string
+  label: string
+  imagePath: string
+  instructions: string | null
+  isActive: boolean
+  updatedAt: string
+}
+
+export interface AdminPaymentQrHistory {
+  id: string
+  label: string
+  imagePath: string
+  instructions: string | null
+  changedAt: string
+}
+
 export interface AdminPricingRule {
   id: string
   label: string
@@ -177,6 +194,23 @@ type AdminPedidosYaPromoRow = {
   cta_url: string
   points: string[] | null
   is_active: boolean
+}
+
+type AdminPaymentQrRow = {
+  id: string
+  label: string
+  image_path: string
+  instructions: string | null
+  is_active: boolean
+  updated_at: string
+}
+
+type AdminPaymentQrHistoryRow = {
+  id: string
+  label: string
+  image_path: string
+  instructions: string | null
+  changed_at: string
 }
 
 type AdminPricingRuleRow = {
@@ -306,6 +340,24 @@ export async function updateBookingStatus(
   }
 
   const { error } = await supabase.from("bookings").update(patch).eq("id", id)
+
+  if (error) {
+    throw new Error(error.message)
+  }
+}
+
+export async function updateBookingSchedule(
+  id: string,
+  startsAt: string,
+  adminNotes = "Reserva reagendada desde el calendario admin.",
+) {
+  const { error } = await supabase
+    .from("bookings")
+    .update({
+      starts_at: startsAt,
+      admin_notes: adminNotes,
+    })
+    .eq("id", id)
 
   if (error) {
     throw new Error(error.message)
@@ -597,6 +649,58 @@ export async function fetchAdminPricingRules() {
   }))
 }
 
+export async function fetchAdminPaymentQrs() {
+  const { data, error } = await supabase
+    .from("payment_qrs")
+    .select("id, label, image_path, instructions, is_active, updated_at")
+    .order("updated_at", { ascending: false })
+
+  if (error) throw new Error(error.message)
+
+  return ((data || []) as AdminPaymentQrRow[]).map((qr) => ({
+    id: qr.id,
+    label: qr.label,
+    imagePath: resolveMediaPath(qr.image_path, "qr"),
+    instructions: qr.instructions,
+    isActive: qr.is_active,
+    updatedAt: qr.updated_at,
+  }))
+}
+
+export async function fetchAdminPaymentQrHistory() {
+  const { data, error } = await supabase
+    .from("payment_qr_history")
+    .select("id, label, image_path, instructions, changed_at")
+    .order("changed_at", { ascending: false })
+    .limit(12)
+
+  if (error) return []
+
+  return ((data || []) as AdminPaymentQrHistoryRow[]).map((qr) => ({
+    id: qr.id,
+    label: qr.label,
+    imagePath: resolveMediaPath(qr.image_path, "qr"),
+    instructions: qr.instructions,
+    changedAt: qr.changed_at,
+  }))
+}
+
+export async function updatePaymentQrProtected(
+  qr: AdminPaymentQr,
+  secret: string,
+) {
+  const { error } = await supabase.rpc("update_payment_qr_protected", {
+    p_payment_qr_id: qr.id,
+    p_label: qr.label,
+    p_image_path: toStoragePath(qr.imagePath, "qr"),
+    p_instructions: qr.instructions || "",
+    p_is_active: qr.isActive,
+    p_secret: secret,
+  })
+
+  if (error) throw new Error(error.message)
+}
+
 export async function updatePricingRule(
   id: string,
   patch: Partial<{
@@ -675,17 +779,34 @@ export async function fetchAdminDiscountTokens() {
 
 export async function createDiscountToken(input?: Partial<AdminDiscountToken>) {
   const code = (input?.code || `EUREKA-${newId().slice(0, 8)}`).toUpperCase()
-  const { error } = await supabase.from("discount_tokens").insert({
-    code,
-    label: input?.label || "Descuento unico",
-    discount_type: input?.discountType || "percent",
-    discount_value: input?.discountValue ?? 10,
-    max_uses: input?.maxUses ?? 1,
-    expires_at: input?.expiresAt || null,
-    is_active: input?.isActive ?? true,
-  })
+  const { data, error } = await supabase
+    .from("discount_tokens")
+    .insert({
+      code,
+      label: input?.label || "Descuento unico",
+      discount_type: input?.discountType || "percent",
+      discount_value: input?.discountValue ?? 10,
+      max_uses: input?.maxUses ?? 1,
+      expires_at: input?.expiresAt || null,
+      is_active: input?.isActive ?? true,
+    })
+    .select("id, code, label, discount_type, discount_value, max_uses, used_count, expires_at, is_active, created_at")
+    .single()
 
   if (error) throw new Error(error.message)
+
+  return {
+    id: data.id,
+    code: data.code,
+    label: data.label,
+    discountType: data.discount_type,
+    discountValue: Number(data.discount_value),
+    maxUses: data.max_uses,
+    usedCount: data.used_count,
+    expiresAt: data.expires_at,
+    isActive: data.is_active,
+    createdAt: data.created_at,
+  } satisfies AdminDiscountToken
 }
 
 export async function updateDiscountToken(
@@ -714,7 +835,7 @@ export async function deleteDiscountToken(id: string) {
   if (error) throw new Error(error.message)
 }
 
-export async function uploadAdminImage(bucket: "hero" | "novedades", file: File) {
+export async function uploadAdminImage(bucket: "hero" | "novedades" | "qr", file: File) {
   if (!file.type.startsWith("image/")) {
     throw new Error("Solo se admiten imagenes.")
   }

@@ -52,6 +52,18 @@ export interface DiscountValidationResult {
   message: string
 }
 
+export interface ReservationChangeLookup {
+  bookingId: string
+  reservationCode: string
+  fullName: string
+  startsAt: string
+  endsAt: string
+  durationMinutes: number
+  status: string
+  changeUsed: boolean
+  changeExpiresAt: string
+}
+
 type PaymentQrRow = {
   id: string
   label: string
@@ -82,6 +94,18 @@ type DiscountRpcRow = {
   discount_amount: number
   total: number
   message: string
+}
+
+type ReservationChangeRpcRow = {
+  booking_id: string
+  reservation_code: string
+  full_name: string
+  starts_at: string
+  ends_at: string
+  duration_minutes: number
+  status: string
+  change_used?: boolean
+  change_expires_at?: string
 }
 
 const sanitizeFileName = (value: string) =>
@@ -237,5 +261,62 @@ export async function validateDiscountCode(
     discountAmount: Number(row.discount_amount),
     total: Number(row.total),
     message: row.message,
+  }
+}
+
+export async function findReservationForChange(
+  reservationCode: string,
+): Promise<ReservationChangeLookup> {
+  const { data, error } = await supabase.rpc("find_booking_for_change", {
+    p_reservation_code: reservationCode,
+  })
+
+  if (error) {
+    throw new Error(error.message)
+  }
+
+  const row = (Array.isArray(data) ? data[0] : data) as ReservationChangeRpcRow | undefined
+
+  if (!row) {
+    throw new Error("No encontramos una reserva activa con ese codigo.")
+  }
+
+  return {
+    bookingId: row.booking_id,
+    reservationCode: row.reservation_code,
+    fullName: row.full_name,
+    startsAt: row.starts_at,
+    endsAt: row.ends_at,
+    durationMinutes: row.duration_minutes,
+    status: row.status,
+    changeUsed: Boolean(row.change_used),
+    changeExpiresAt: row.change_expires_at || "",
+  }
+}
+
+export async function rescheduleReservationTime(
+  reservationCode: string,
+  newTime: string,
+) {
+  const { data, error } = await supabase.rpc("reschedule_booking_time_once", {
+    p_reservation_code: reservationCode,
+    p_new_time: newTime,
+  })
+
+  if (error) {
+    throw new Error(error.message)
+  }
+
+  const row = (Array.isArray(data) ? data[0] : data) as ReservationChangeRpcRow | undefined
+
+  if (!row) {
+    throw new Error("No se pudo cambiar la hora de la reserva.")
+  }
+
+  return {
+    reservationCode: row.reservation_code,
+    startsAt: row.starts_at,
+    endsAt: row.ends_at,
+    status: row.status,
   }
 }

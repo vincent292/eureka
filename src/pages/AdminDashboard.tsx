@@ -4,12 +4,17 @@ import {
   FaBell,
   FaCalendarAlt,
   FaClipboardList,
+  FaDownload,
+  FaEdit,
   FaHome,
+  FaList,
   FaPlus,
   FaPercent,
+  FaQrcode,
   FaSave,
   FaSignOutAlt,
   FaTags,
+  FaThLarge,
   FaTimes,
   FaTrash,
   FaUsers,
@@ -24,6 +29,8 @@ import {
   fetchAdminNotifications,
   fetchAdminNoveltyItems,
   fetchAdminPedidosYaPromo,
+  fetchAdminPaymentQrHistory,
+  fetchAdminPaymentQrs,
   fetchAdminPricingRules,
   createDiscountToken,
   createHeroSlide,
@@ -37,11 +44,13 @@ import {
   reorderHeroSlides,
   reorderNoveltyItems,
   updateBookingStatus,
+  updateBookingSchedule,
   updateDiscountToken,
   updateHeroSlide,
   updateMessageTemplate,
   updateNoveltyItem,
   updatePedidosYaPromo,
+  updatePaymentQrProtected,
   updatePricingRule,
   uploadAdminImage,
   type AdminBooking,
@@ -51,6 +60,8 @@ import {
   type AdminNotification,
   type AdminNoveltyItem,
   type AdminPedidosYaPromo,
+  type AdminPaymentQr,
+  type AdminPaymentQrHistory,
   type AdminPricingRule,
 } from "../lib/adminDashboardService"
 import { supabase } from "../lib/supabaseClient"
@@ -64,11 +75,25 @@ type Contact = {
   deleted: boolean
 }
 
+type ReservationViewMode = "grid" | "list"
+type CalendarViewMode = "day" | "week" | "month"
+type AdminViewMode = "grid" | "list"
+type AdminEditorModal =
+  | { type: "pricing"; id: string }
+  | { type: "discount"; id: string }
+  | { type: "hero"; id: string }
+  | { type: "novelty"; id: string }
+  | { type: "pedidosya"; id: string }
+  | { type: "paymentQr"; id: string }
+  | null
+
 type AdminSection =
   | "overview"
   | "reservations"
   | "calendar"
   | "pricing"
+  | "discounts"
+  | "paymentQr"
   | "landing"
   | "novelties"
   | "messages"
@@ -83,8 +108,10 @@ const adminSections: Array<{
   { id: "reservations", label: "Reservas", icon: FaClipboardList },
   { id: "calendar", label: "Calendario", icon: FaCalendarAlt },
   { id: "pricing", label: "Precios", icon: FaTags },
+  { id: "discounts", label: "Tokens", icon: FaPercent },
+  { id: "paymentQr", label: "QR de pago", icon: FaQrcode },
   { id: "landing", label: "Landing", icon: FaHome },
-  { id: "novelties", label: "Novedades", icon: FaPercent },
+  { id: "novelties", label: "Novedades", icon: FaTags },
   { id: "messages", label: "Mensajes", icon: FaWhatsapp },
   { id: "contacts", label: "Contactos", icon: FaUsers },
 ]
@@ -127,6 +154,41 @@ const formatReservationDate = (value: string) =>
     year: "numeric",
   })
 
+const formatDateKey = (date: Date) => {
+  const year = date.getFullYear()
+  const month = `${date.getMonth() + 1}`.padStart(2, "0")
+  const day = `${date.getDate()}`.padStart(2, "0")
+  return `${year}-${month}-${day}`
+}
+
+const buildDateTime = (dateKey: string, hour: number) => {
+  const hourLabel = `${hour}`.padStart(2, "0")
+  return new Date(`${dateKey}T${hourLabel}:00:00`).toISOString()
+}
+
+const addDays = (date: Date, days: number) => {
+  const copy = new Date(date)
+  copy.setDate(copy.getDate() + days)
+  return copy
+}
+
+const getWeekDays = (dateKey: string) => {
+  const base = new Date(`${dateKey}T00:00:00`)
+  const mondayOffset = (base.getDay() + 6) % 7
+  const monday = addDays(base, -mondayOffset)
+  return Array.from({ length: 7 }, (_, index) => addDays(monday, index))
+}
+
+const getMonthDays = (dateKey: string) => {
+  const base = new Date(`${dateKey}T00:00:00`)
+  const first = new Date(base.getFullYear(), base.getMonth(), 1)
+  const startOffset = (first.getDay() + 6) % 7
+  const gridStart = addDays(first, -startOffset)
+  return Array.from({ length: 42 }, (_, index) => addDays(gridStart, index))
+}
+
+const calendarHours = Array.from({ length: 14 }, (_, index) => index + 9)
+
 const statusLabels: Record<AdminBooking["status"], string> = {
   pending_payment: "Pendiente pago",
   pendiente_verificacion: "Pendiente verificacion",
@@ -141,6 +203,7 @@ export default function AdminDashboard() {
   const [activeSection, setActiveSection] = useState<AdminSection>("overview")
   const [selectedDate, setSelectedDate] = useState(today)
   const [bookings, setBookings] = useState<AdminBooking[]>([])
+  const [calendarBookings, setCalendarBookings] = useState<AdminBooking[]>([])
   const [contacts, setContacts] = useState<Contact[]>([])
   const [notifications, setNotifications] = useState<AdminNotification[]>([])
   const [heroSlides, setHeroSlides] = useState<AdminHeroSlide[]>([])
@@ -148,10 +211,25 @@ export default function AdminDashboard() {
   const [pedidosYaPromo, setPedidosYaPromo] = useState<AdminPedidosYaPromo | null>(null)
   const [pricingRules, setPricingRules] = useState<AdminPricingRule[]>([])
   const [discountTokens, setDiscountTokens] = useState<AdminDiscountToken[]>([])
+  const [paymentQrs, setPaymentQrs] = useState<AdminPaymentQr[]>([])
+  const [paymentQrHistory, setPaymentQrHistory] = useState<AdminPaymentQrHistory[]>([])
   const [messageTemplates, setMessageTemplates] = useState<AdminMessageTemplate[]>([])
   const [loading, setLoading] = useState(true)
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [reservationViewMode, setReservationViewMode] = useState<ReservationViewMode>("grid")
+  const [calendarViewMode, setCalendarViewMode] = useState<CalendarViewMode>("day")
+  const [pricingViewMode, setPricingViewMode] = useState<AdminViewMode>("grid")
+  const [tokenViewMode, setTokenViewMode] = useState<AdminViewMode>("grid")
+  const [landingViewMode, setLandingViewMode] = useState<AdminViewMode>("grid")
+  const [noveltyViewMode, setNoveltyViewMode] = useState<AdminViewMode>("grid")
+  const [editorModal, setEditorModal] = useState<AdminEditorModal>(null)
+  const [qrSecret, setQrSecret] = useState("")
+  const [draggedBookingId, setDraggedBookingId] = useState<string | null>(null)
+  const [expandedMonthDay, setExpandedMonthDay] = useState<string | null>(null)
+  const [browserNotificationsEnabled, setBrowserNotificationsEnabled] = useState(
+    typeof Notification !== "undefined" && Notification.permission === "granted",
+  )
   const [draggedHeroId, setDraggedHeroId] = useState<string | null>(null)
   const [draggedNoveltyId, setDraggedNoveltyId] = useState<string | null>(null)
   const [promoMessage, setPromoMessage] = useState(
@@ -186,31 +264,40 @@ export default function AdminDashboard() {
     try {
       const [
         nextBookings,
+        nextCalendarBookings,
         nextNotifications,
         nextHeroSlides,
         nextNoveltyItems,
         nextPedidosYaPromo,
         nextPricingRules,
         nextDiscountTokens,
+        nextPaymentQrs,
+        nextPaymentQrHistory,
         nextMessageTemplates,
       ] = await Promise.all([
         fetchAdminBookings(date),
+        fetchAdminBookings(),
         fetchAdminNotifications(),
         fetchAdminHeroSlides(),
         fetchAdminNoveltyItems(),
         fetchAdminPedidosYaPromo(),
         fetchAdminPricingRules(),
         fetchAdminDiscountTokens(),
+        fetchAdminPaymentQrs(),
+        fetchAdminPaymentQrHistory(),
         fetchMessageTemplates(),
       ])
 
       setBookings(nextBookings)
+      setCalendarBookings(nextCalendarBookings)
       setNotifications(nextNotifications)
       setHeroSlides(nextHeroSlides)
       setNoveltyItems(nextNoveltyItems)
       setPedidosYaPromo(nextPedidosYaPromo)
       setPricingRules(nextPricingRules)
       setDiscountTokens(nextDiscountTokens)
+      setPaymentQrs(nextPaymentQrs)
+      setPaymentQrHistory(nextPaymentQrHistory)
       setMessageTemplates(nextMessageTemplates)
       setBookingNotes(
         Object.fromEntries(
@@ -226,7 +313,16 @@ export default function AdminDashboard() {
         seenNotificationIdsRef.current.length > 0 &&
         unseenIds.length > seenNotificationIdsRef.current.length
       ) {
+        const newestNotification = nextNotifications.find(
+          (notification) => !seenNotificationIdsRef.current.includes(notification.id),
+        )
         playNotificationTone()
+        if (browserNotificationsEnabled && newestNotification && document.hidden) {
+          new Notification("Eureka Admin", {
+            body: newestNotification.message,
+            icon: "/image/eureka.png",
+          })
+        }
       }
 
       seenNotificationIdsRef.current = unseenIds
@@ -315,6 +411,22 @@ export default function AdminDashboard() {
     }
   }
 
+  const requestBrowserNotifications = async () => {
+    if (typeof Notification === "undefined") {
+      setSaveMessage("Este navegador no soporta notificaciones.")
+      return
+    }
+
+    const permission = await Notification.requestPermission()
+    const enabled = permission === "granted"
+    setBrowserNotificationsEnabled(enabled)
+    setSaveMessage(
+      enabled
+        ? "Notificaciones del navegador activadas mientras el panel este abierto."
+        : "No se activaron las notificaciones del navegador.",
+    )
+  }
+
   const handleBookingStatus = async (
     bookingId: string,
     status: AdminBooking["status"],
@@ -330,6 +442,43 @@ export default function AdminDashboard() {
       await loadDashboard(selectedDate, false)
     } catch (error) {
       setSaveMessage(error instanceof Error ? error.message : "No se pudo actualizar la reserva.")
+    }
+  }
+
+  const handleBookingDrop = async (dateKey: string, hour: number) => {
+    if (!draggedBookingId) return
+
+    try {
+      await updateBookingSchedule(draggedBookingId, buildDateTime(dateKey, hour))
+      setSaveMessage("Reserva reagendada desde el calendario.")
+      const draggedDate = calendarBookings.find((booking) => booking.id === draggedBookingId)?.startsAt
+      await loadDashboard(draggedDate ? formatDateKey(new Date(draggedDate)) : selectedDate, false)
+    } catch (error) {
+      setSaveMessage(error instanceof Error ? error.message : "No se pudo reagendar la reserva.")
+    } finally {
+      setDraggedBookingId(null)
+    }
+  }
+
+  const handleBookingDateDrop = async (dateKey: string) => {
+    const draggedBooking = calendarBookings.find((booking) => booking.id === draggedBookingId)
+    if (!draggedBooking) return
+
+    await handleBookingDrop(dateKey, new Date(draggedBooking.startsAt).getHours())
+  }
+
+  const handleBookingTimeEdit = async (booking: AdminBooking, newTime: string) => {
+    try {
+      const dateKey = formatDateKey(new Date(booking.startsAt))
+      await updateBookingSchedule(
+        booking.id,
+        new Date(`${dateKey}T${newTime}:00`).toISOString(),
+        "Hora editada manualmente desde el calendario admin.",
+      )
+      setSaveMessage("Hora de reserva actualizada.")
+      await loadDashboard(dateKey, false)
+    } catch (error) {
+      setSaveMessage(error instanceof Error ? error.message : "No se pudo actualizar la hora.")
     }
   }
 
@@ -372,8 +521,8 @@ export default function AdminDashboard() {
 
   const handleDiscountCreate = async () => {
     try {
-      await createDiscountToken()
-      setSaveMessage("Token de descuento creado.")
+      const token = await createDiscountToken()
+      setSaveMessage(`Token creado correctamente: ${token.code}`)
       await loadDashboard(selectedDate, false)
     } catch (error) {
       setSaveMessage(error instanceof Error ? error.message : "No se pudo crear el token.")
@@ -517,6 +666,44 @@ export default function AdminDashboard() {
     }
   }
 
+  const handlePedidosYaUpload = async (file: File | undefined) => {
+    if (!file || !pedidosYaPromo) return
+
+    try {
+      const imagePath = await uploadAdminImage("novedades", file)
+      await updatePedidosYaPromo(pedidosYaPromo.id, { imagePath })
+      setSaveMessage("Imagen de PedidosYa subida.")
+      await loadDashboard(selectedDate, false)
+    } catch (error) {
+      setSaveMessage(error instanceof Error ? error.message : "No se pudo subir la imagen.")
+    }
+  }
+
+  const handlePaymentQrUpload = async (qr: AdminPaymentQr, file: File | undefined) => {
+    if (!file) return
+
+    try {
+      const imagePath = await uploadAdminImage("qr", file)
+      setPaymentQrs((current) =>
+        current.map((item) => (item.id === qr.id ? { ...item, imagePath } : item)),
+      )
+      setSaveMessage("Imagen QR subida. Ingresa la clave y guarda para activar el cambio.")
+    } catch (error) {
+      setSaveMessage(error instanceof Error ? error.message : "No se pudo subir el QR.")
+    }
+  }
+
+  const handlePaymentQrSave = async (qr: AdminPaymentQr) => {
+    try {
+      await updatePaymentQrProtected(qr, qrSecret)
+      setQrSecret("")
+      setSaveMessage("QR de pago actualizado y registrado en historial.")
+      await loadDashboard(selectedDate, false)
+    } catch (error) {
+      setSaveMessage(error instanceof Error ? error.message : "No se pudo actualizar el QR.")
+    }
+  }
+
   const moveNoveltyItem = async (targetId: string) => {
     if (!draggedNoveltyId || draggedNoveltyId === targetId) return
 
@@ -574,14 +761,20 @@ export default function AdminDashboard() {
     .filter((booking) => booking.status === "confirmed")
     .reduce((sum, booking) => sum + booking.totalAmount, 0)
 
-  const bookingsBySlot = bookings.reduce<Record<string, AdminBooking[]>>((groups, booking) => {
-    const key = `${formatReservationTime(booking.startsAt)} - ${formatReservationTime(booking.endsAt)}`
+  const bookingsByDateKey = calendarBookings.reduce<Record<string, AdminBooking[]>>((groups, booking) => {
+    const key = formatDateKey(new Date(booking.startsAt))
     if (!groups[key]) {
       groups[key] = []
     }
     groups[key].push(booking)
     return groups
   }, {})
+  const weekDays = getWeekDays(selectedDate)
+  const monthDays = getMonthDays(selectedDate)
+  const selectedMonth = new Date(`${selectedDate}T00:00:00`).getMonth()
+
+  const bookingsForDateHour = (dateKey: string, hour: number) =>
+    (bookingsByDateKey[dateKey] || []).filter((booking) => new Date(booking.startsAt).getHours() === hour)
 
   const templateFor = (type: AdminMessageTemplate["type"]) =>
     messageTemplates.find((template) => template.type === type)?.content || ""
@@ -605,6 +798,30 @@ export default function AdminDashboard() {
     const text = renderTemplate(templateFor(type), booking)
     window.open(`https://wa.me/591${phone}?text=${encodeURIComponent(text)}`, "_blank")
   }
+
+  const downloadProof = async (booking: AdminBooking) => {
+    if (!booking.paymentReceiptPath) return
+
+    try {
+      const response = await fetch(booking.paymentReceiptPath)
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement("a")
+      link.href = url
+      link.download = booking.paymentReceiptOriginalName || `${booking.reservationCode}-comprobante`
+      link.click()
+      URL.revokeObjectURL(url)
+    } catch {
+      setSaveMessage("No se pudo descargar el comprobante.")
+    }
+  }
+
+  const editingPricing = editorModal?.type === "pricing" ? pricingRules.find((item) => item.id === editorModal.id) : null
+  const editingToken = editorModal?.type === "discount" ? discountTokens.find((item) => item.id === editorModal.id) : null
+  const editingHero = editorModal?.type === "hero" ? heroSlides.find((item) => item.id === editorModal.id) : null
+  const editingNovelty = editorModal?.type === "novelty" ? noveltyItems.find((item) => item.id === editorModal.id) : null
+  const editingPedidosYa = editorModal?.type === "pedidosya" ? pedidosYaPromo : null
+  const editingPaymentQr = editorModal?.type === "paymentQr" ? paymentQrs.find((item) => item.id === editorModal.id) : null
 
   return (
     <main className="admin-dashboard">
@@ -707,6 +924,9 @@ export default function AdminDashboard() {
                 <span className="admin-kicker">Alertas</span>
                 <h2>Centro de notificaciones</h2>
               </div>
+              <button type="button" className="btn-edit" onClick={requestBrowserNotifications}>
+                {browserNotificationsEnabled ? "Navegador activo" : "Activar navegador"}
+              </button>
             </div>
 
             <div className="admin-notification-list">
@@ -827,11 +1047,32 @@ export default function AdminDashboard() {
                 <span className="admin-kicker">Reservas</span>
                 <h2>Gestion completa del dia</h2>
               </div>
+              <div className="admin-view-toggle" aria-label="Cambiar vista de reservas">
+                <button
+                  type="button"
+                  className={reservationViewMode === "grid" ? "is-active" : ""}
+                  onClick={() => setReservationViewMode("grid")}
+                >
+                  <FaThLarge />
+                  Mosaico
+                </button>
+                <button
+                  type="button"
+                  className={reservationViewMode === "list" ? "is-active" : ""}
+                  onClick={() => setReservationViewMode("list")}
+                >
+                  <FaList />
+                  Lista
+                </button>
+              </div>
             </div>
 
-            <div className="admin-reservation-grid">
+            <div className={`admin-reservation-grid admin-reservation-grid--${reservationViewMode}`}>
               {bookings.map((booking) => (
-                <article key={booking.id} className="admin-reservation-card">
+                <article
+                  key={booking.id}
+                  className="admin-reservation-card"
+                >
                   <div className="admin-reservation-card__top">
                     <div>
                       <strong>{booking.fullName}</strong>
@@ -849,24 +1090,35 @@ export default function AdminDashboard() {
                   <p>
                     {booking.packageLabel || `${booking.partySize} persona(s) | ${booking.durationMinutes} min`}
                   </p>
+                  <p>Carnet: {booking.nationalId || "Sin carnet"}</p>
                   <p>Subtotal: Bs {(booking.totalAmount + booking.discountAmount).toFixed(2)}</p>
-                  <p>
-                    Descuento: {booking.discountCode || "Sin codigo"} | Bs{" "}
-                    {booking.discountAmount.toFixed(2)}
-                  </p>
+                  <div className="admin-discount-line">
+                    <span>{booking.discountCode || "Sin codigo aplicado"}</span>
+                    <strong>- Bs {booking.discountAmount.toFixed(2)}</strong>
+                  </div>
                   <p>Total pagado: Bs {booking.totalAmount.toFixed(2)}</p>
-                  <p>{booking.phone}</p>
+                  <p>WhatsApp: {booking.phone}</p>
                   <p>Referencia: {booking.paymentReference || "Sin referencia"}</p>
 
                   {booking.paymentReceiptPath && !booking.proofDeletedAt ? (
-                    <a
-                      className="admin-proof-link"
-                      href={booking.paymentReceiptPath}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      Ver comprobante
-                    </a>
+                    <div className="admin-proof-actions">
+                      <a
+                        className="admin-proof-link"
+                        href={booking.paymentReceiptPath}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Ver comprobante
+                      </a>
+                      <button
+                        type="button"
+                        className="admin-proof-link admin-proof-link--download"
+                        onClick={() => downloadProof(booking)}
+                      >
+                        <FaDownload />
+                        Descargar
+                      </button>
+                    </div>
                   ) : (
                     <p>Comprobante eliminado o no disponible</p>
                   )}
@@ -925,33 +1177,146 @@ export default function AdminDashboard() {
             <div className="admin-section-heading">
               <div>
                 <span className="admin-kicker">Calendario</span>
-                <h2>Vista por bloques horarios</h2>
+                <h2>Agenda de reservas</h2>
+                <p className="admin-template-help">
+                  Mostrando todas las reservas. El filtro de fecha solo enfoca la vista, no limita el calendario.
+                </p>
+              </div>
+              <div className="admin-view-toggle">
+                {(["day", "week", "month"] as CalendarViewMode[]).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    className={calendarViewMode === mode ? "is-active" : ""}
+                    onClick={() => setCalendarViewMode(mode)}
+                  >
+                    {mode === "day" ? "Dia" : mode === "week" ? "Semana" : "Mes"}
+                  </button>
+                ))}
               </div>
             </div>
 
-            <div className="admin-calendar">
-              {Object.entries(bookingsBySlot).length === 0 ? (
-                <p>No hay reservas para la fecha seleccionada.</p>
-              ) : (
-                Object.entries(bookingsBySlot).map(([slot, slotBookings]) => (
-                  <article key={slot} className="admin-calendar-slot">
-                    <div className="admin-calendar-slot__head">
-                      <strong>{slot}</strong>
-                      <span>{slotBookings.length}/3 reservas</span>
-                    </div>
-                    <div className="admin-calendar-slot__body">
-                      {slotBookings.map((booking) => (
-                        <div key={booking.id} className={`calendar-booking calendar-booking--${booking.status}`}>
-                          <strong>{booking.fullName}</strong>
-                          <span>
-                            {booking.partySize} persona(s) | Bs {booking.totalAmount.toFixed(2)}
-                          </span>
+            <div className={`admin-google-calendar admin-google-calendar--${calendarViewMode}`}>
+              {calendarViewMode === "day" ? (
+                <div className="admin-day-calendar">
+                  {calendarHours.map((hour) => {
+                    const slotBookings = bookingsForDateHour(selectedDate, hour)
+                    return (
+                      <div
+                        key={hour}
+                        className={`admin-hour-row${slotBookings.length >= 3 ? " is-full" : ""}`}
+                        onDragOver={(event) => event.preventDefault()}
+                        onDrop={() => handleBookingDrop(selectedDate, hour)}
+                      >
+                        <span className="admin-hour-label">{`${hour}:00`}</span>
+                        <div className="admin-hour-dropzone">
+                          {slotBookings.length === 0 ? <span>Disponible</span> : null}
+                          {slotBookings.map((booking) => (
+                            <div
+                              key={booking.id}
+                              className={`calendar-booking calendar-booking--${booking.status}`}
+                              draggable
+                              onDragStart={() => setDraggedBookingId(booking.id)}
+                              onDragEnd={() => setDraggedBookingId(null)}
+                            >
+                              <strong>{booking.fullName}</strong>
+                              <span>
+                                {formatReservationTime(booking.startsAt)} | {booking.partySize} persona(s)
+                              </span>
+                              <input
+                                type="time"
+                                value={new Date(booking.startsAt).toTimeString().slice(0, 5)}
+                                onPointerDown={(event) => event.stopPropagation()}
+                                onClick={(event) => event.stopPropagation()}
+                                onChange={(event) => handleBookingTimeEdit(booking, event.target.value)}
+                                aria-label={`Editar hora de ${booking.fullName}`}
+                              />
+                            </div>
+                          ))}
                         </div>
-                      ))}
-                    </div>
-                  </article>
-                ))
-              )}
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : null}
+
+              {calendarViewMode === "week" ? (
+                <div className="admin-week-calendar">
+                  {weekDays.map((day) => {
+                    const dateKey = formatDateKey(day)
+                    return (
+                      <div key={dateKey} className="admin-week-day">
+                        <strong>{day.toLocaleDateString("es-BO", { weekday: "short", day: "2-digit" })}</strong>
+                        {calendarHours.map((hour) => {
+                          const slotBookings = bookingsForDateHour(dateKey, hour)
+                          return (
+                            <div
+                              key={`${dateKey}-${hour}`}
+                              className="admin-week-slot"
+                              onDragOver={(event) => event.preventDefault()}
+                              onDrop={() => handleBookingDrop(dateKey, hour)}
+                            >
+                              <span>{`${hour}:00`}</span>
+                              {slotBookings.map((booking) => (
+                                <button
+                                  key={booking.id}
+                                  type="button"
+                                  className={`calendar-booking calendar-booking--${booking.status}`}
+                                  draggable
+                                  onDragStart={() => setDraggedBookingId(booking.id)}
+                                  onDragEnd={() => setDraggedBookingId(null)}
+                                >
+                                  {booking.fullName}
+                                </button>
+                              ))}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : null}
+
+              {calendarViewMode === "month" ? (
+                <div className="admin-month-calendar">
+                  {monthDays.map((day) => {
+                    const dateKey = formatDateKey(day)
+                    const dayBookings = bookingsByDateKey[dateKey] || []
+                    const visibleBookings = expandedMonthDay === dateKey ? dayBookings : dayBookings.slice(0, 3)
+                    return (
+                      <div
+                        key={dateKey}
+                        className={`admin-month-day${day.getMonth() !== selectedMonth ? " is-muted" : ""}`}
+                        onDragOver={(event) => event.preventDefault()}
+                        onDrop={() => handleBookingDateDrop(dateKey)}
+                      >
+                        <strong>{day.getDate()}</strong>
+                        {visibleBookings.map((booking) => (
+                          <span
+                            key={booking.id}
+                            className={`calendar-booking calendar-booking--${booking.status}`}
+                            draggable
+                            onDragStart={() => setDraggedBookingId(booking.id)}
+                            onDragEnd={() => setDraggedBookingId(null)}
+                          >
+                            {formatReservationTime(booking.startsAt)} {booking.fullName}
+                          </span>
+                        ))}
+                        {dayBookings.length > 3 ? (
+                          <button
+                            type="button"
+                            className="admin-month-more"
+                            onClick={() => setExpandedMonthDay((current) => (current === dateKey ? null : dateKey))}
+                          >
+                            {expandedMonthDay === dateKey ? "Ver menos" : `+${dayBookings.length - 3} mas`}
+                          </button>
+                        ) : null}
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : null}
             </div>
           </section>
         ) : null}
@@ -961,118 +1326,37 @@ export default function AdminDashboard() {
             <div className="admin-section-heading">
               <div>
                 <span className="admin-kicker">Precios</span>
-                <h2>Precios y tokens de descuento</h2>
+                <h2>Precios de reservas</h2>
               </div>
-              <button type="button" className="btn-approve" onClick={handlePricingCreate}>
-                <FaPlus />
-                <span>Nuevo precio</span>
-              </button>
+              <div className="admin-inline-actions">
+                <div className="admin-view-toggle">
+                  <button type="button" className={pricingViewMode === "grid" ? "is-active" : ""} onClick={() => setPricingViewMode("grid")}>
+                    <FaThLarge /> Mosaico
+                  </button>
+                  <button type="button" className={pricingViewMode === "list" ? "is-active" : ""} onClick={() => setPricingViewMode("list")}>
+                    <FaList /> Lista
+                  </button>
+                </div>
+                <button type="button" className="btn-approve" onClick={handlePricingCreate}>
+                  <FaPlus />
+                  <span>Nuevo precio</span>
+                </button>
+              </div>
             </div>
 
-            <div className="admin-price-grid admin-price-grid--wide">
+            <div className={`admin-preview-grid admin-preview-grid--${pricingViewMode}`}>
               {pricingRules.map((rule) => (
-                <article key={rule.id} className="admin-price-card admin-price-card--stacked">
-                  <div className="admin-card-toolbar">
-                    <strong>{rule.label}</strong>
-                    <label className="admin-switch">
-                      <input
-                        type="checkbox"
-                        checked={rule.isActive}
-                        onChange={(event) =>
-                          setPricingRules((current) =>
-                            current.map((item) =>
-                              item.id === rule.id
-                                ? { ...item, isActive: event.target.checked }
-                                : item,
-                            ),
-                          )
-                        }
-                      />
-                      Activo
-                    </label>
-                  </div>
-                  <label>
-                    Etiqueta
-                    <input
-                      value={rule.label}
-                      onChange={(event) =>
-                        setPricingRules((current) =>
-                          current.map((item) =>
-                            item.id === rule.id ? { ...item, label: event.target.value } : item,
-                          ),
-                        )
-                      }
-                    />
-                  </label>
-                  <label>
-                    Duracion (min)
-                    <input
-                      type="number"
-                      value={rule.durationMinutes}
-                      onChange={(event) =>
-                        setPricingRules((current) =>
-                          current.map((item) =>
-                            item.id === rule.id
-                              ? { ...item, durationMinutes: Number(event.target.value) }
-                              : item,
-                          ),
-                        )
-                      }
-                    />
-                  </label>
-                  <label>
-                    Personas
-                    <input
-                      type="number"
-                      value={rule.personCount}
-                      onChange={(event) =>
-                        setPricingRules((current) =>
-                          current.map((item) =>
-                            item.id === rule.id
-                              ? { ...item, personCount: Number(event.target.value) }
-                              : item,
-                          ),
-                        )
-                      }
-                    />
-                  </label>
-                  <label>
-                    Precio Bs
-                    <input
-                      type="number"
-                      step="0.5"
-                      value={rule.price}
-                      onChange={(event) =>
-                        setPricingRules((current) =>
-                          current.map((item) =>
-                            item.id === rule.id
-                              ? { ...item, price: Number(event.target.value) }
-                              : item,
-                          ),
-                        )
-                      }
-                      />
-                  </label>
-                  <label>
-                    Orden
-                    <input
-                      type="number"
-                      value={rule.sortOrder}
-                      onChange={(event) =>
-                        setPricingRules((current) =>
-                          current.map((item) =>
-                            item.id === rule.id
-                              ? { ...item, sortOrder: Number(event.target.value) }
-                              : item,
-                          ),
-                        )
-                      }
-                    />
-                  </label>
+                <article key={rule.id} className="admin-preview-tile">
+                  <span className={`status-pill status-pill--${rule.isActive ? "confirmed" : "cancelled"}`}>
+                    {rule.isActive ? "Activo" : "Inactivo"}
+                  </span>
+                  <strong>{rule.label}</strong>
+                  <p>{rule.durationMinutes} min | {rule.personCount} persona(s)</p>
+                  <h3>Bs {rule.price.toFixed(2)}</h3>
                   <div className="admin-inline-actions">
-                    <button type="button" className="btn-edit" onClick={() => handlePricingSave(rule)}>
-                      <FaSave />
-                      <span>Guardar</span>
+                    <button type="button" className="btn-edit" onClick={() => setEditorModal({ type: "pricing", id: rule.id })}>
+                      <FaEdit />
+                      <span>Editar</span>
                     </button>
                     <button type="button" className="btn-reject" onClick={() => handlePricingDelete(rule.id)}>
                       <FaTrash />
@@ -1083,154 +1367,107 @@ export default function AdminDashboard() {
               ))}
             </div>
 
-            <section className="admin-panel-card">
-              <div className="admin-section-heading">
-                <div>
-                  <span className="admin-kicker">Descuentos</span>
-                  <h2>Tokens de un solo uso</h2>
+          </section>
+        ) : null}
+
+        {!loading && activeSection === "discounts" ? (
+          <section className="admin-content">
+            <div className="admin-section-heading">
+              <div>
+                <span className="admin-kicker">Descuentos</span>
+                <h2>Tokens de un solo uso</h2>
+              </div>
+              <div className="admin-inline-actions">
+                <div className="admin-view-toggle">
+                  <button type="button" className={tokenViewMode === "grid" ? "is-active" : ""} onClick={() => setTokenViewMode("grid")}>
+                    <FaThLarge /> Mosaico
+                  </button>
+                  <button type="button" className={tokenViewMode === "list" ? "is-active" : ""} onClick={() => setTokenViewMode("list")}>
+                    <FaList /> Lista
+                  </button>
                 </div>
                 <button type="button" className="btn-approve" onClick={handleDiscountCreate}>
                   <FaPlus />
                   <span>Generar token</span>
                 </button>
               </div>
+            </div>
 
-              <div className="admin-editor-grid">
-                {discountTokens.map((token) => (
-                  <article key={token.id} className="admin-editor-card">
-                    <div className="admin-card-toolbar">
-                      <strong>{token.code}</strong>
-                      <span>
-                        {token.usedCount}/{token.maxUses} usos
-                      </span>
+            <div className={`admin-preview-grid admin-preview-grid--${tokenViewMode}`}>
+              {discountTokens.map((token) => (
+                <article key={token.id} className="admin-preview-tile admin-preview-tile--token">
+                  <span className={`status-pill status-pill--${token.isActive ? "confirmed" : "cancelled"}`}>
+                    {token.usedCount}/{token.maxUses} usos
+                  </span>
+                  <strong>{token.code}</strong>
+                  <p>{token.label}</p>
+                  <h3>{token.discountType === "percent" ? `${token.discountValue}%` : `Bs ${token.discountValue}`}</h3>
+                  <div className="admin-inline-actions">
+                    <button type="button" className="btn-edit" onClick={() => setEditorModal({ type: "discount", id: token.id })}>
+                      <FaEdit />
+                      <span>Editar</span>
+                    </button>
+                    <button type="button" className="btn-reject" onClick={() => handleDiscountDelete(token.id)}>
+                      <FaTrash />
+                      <span>Eliminar</span>
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
+        {!loading && activeSection === "paymentQr" ? (
+          <section className="admin-content">
+            <div className="admin-section-heading">
+              <div>
+                <span className="admin-kicker">Pago</span>
+                <h2>QR de reservas</h2>
+                <p className="admin-template-help">
+                  Para cambiar el QR debes ingresar la clave de proteccion. Cada cambio guarda historial con fecha.
+                </p>
+              </div>
+            </div>
+
+            <div className="admin-preview-grid">
+              {paymentQrs.map((qr) => (
+                <article key={qr.id} className="admin-preview-tile admin-preview-tile--image">
+                  <div className="admin-preview-card admin-preview-card--qr">
+                    <img src={qr.imagePath} alt={qr.label} />
+                    <div>
+                      <span>{qr.isActive ? "Activo" : "Inactivo"}</span>
+                      <strong>{qr.label}</strong>
                     </div>
-                    <label>
-                      Codigo
-                      <input
-                        value={token.code}
-                        onChange={(event) =>
-                          setDiscountTokens((current) =>
-                            current.map((item) =>
-                              item.id === token.id
-                                ? { ...item, code: event.target.value.toUpperCase() }
-                                : item,
-                            ),
-                          )
-                        }
-                      />
-                    </label>
-                    <label>
-                      Nombre interno
-                      <input
-                        value={token.label}
-                        onChange={(event) =>
-                          setDiscountTokens((current) =>
-                            current.map((item) =>
-                              item.id === token.id ? { ...item, label: event.target.value } : item,
-                            ),
-                          )
-                        }
-                      />
-                    </label>
-                    <div className="admin-mini-grid">
-                      <label>
-                        Tipo
-                        <select
-                          value={token.discountType}
-                          onChange={(event) =>
-                            setDiscountTokens((current) =>
-                              current.map((item) =>
-                                item.id === token.id
-                                  ? {
-                                      ...item,
-                                      discountType: event.target.value as AdminDiscountToken["discountType"],
-                                    }
-                                  : item,
-                              ),
-                            )
-                          }
-                        >
-                          <option value="percent">Porcentaje</option>
-                          <option value="fixed">Monto fijo</option>
-                        </select>
-                      </label>
-                      <label>
-                        Valor
-                        <input
-                          type="number"
-                          step="0.5"
-                          value={token.discountValue}
-                          onChange={(event) =>
-                            setDiscountTokens((current) =>
-                              current.map((item) =>
-                                item.id === token.id
-                                  ? { ...item, discountValue: Number(event.target.value) }
-                                  : item,
-                              ),
-                            )
-                          }
-                        />
-                      </label>
-                      <label>
-                        Usos
-                        <input
-                          type="number"
-                          min="1"
-                          value={token.maxUses}
-                          onChange={(event) =>
-                            setDiscountTokens((current) =>
-                              current.map((item) =>
-                                item.id === token.id
-                                  ? { ...item, maxUses: Number(event.target.value) }
-                                  : item,
-                              ),
-                            )
-                          }
-                        />
-                      </label>
+                  </div>
+                  <p>Actualizado: {new Date(qr.updatedAt).toLocaleString("es-BO")}</p>
+                  <button type="button" className="btn-edit" onClick={() => setEditorModal({ type: "paymentQr", id: qr.id })}>
+                    <FaEdit />
+                    Editar QR
+                  </button>
+                </article>
+              ))}
+            </div>
+
+            <section className="admin-panel-card">
+              <div className="admin-section-heading">
+                <div>
+                  <span className="admin-kicker">Historial</span>
+                  <h2>Cambios anteriores</h2>
+                </div>
+              </div>
+              <div className="admin-preview-grid admin-preview-grid--list">
+                {paymentQrHistory.length === 0 ? <p>No hay cambios registrados todavia.</p> : null}
+                {paymentQrHistory.map((qr) => (
+                  <article key={qr.id} className="admin-preview-tile admin-preview-tile--image">
+                    <div className="admin-preview-card admin-preview-card--qr">
+                      <img src={qr.imagePath} alt={qr.label} />
+                      <div>
+                        <span>{new Date(qr.changedAt).toLocaleString("es-BO")}</span>
+                        <strong>{qr.label}</strong>
+                      </div>
                     </div>
-                    <label>
-                      Expira
-                      <input
-                        type="datetime-local"
-                        value={token.expiresAt ? token.expiresAt.slice(0, 16) : ""}
-                        onChange={(event) =>
-                          setDiscountTokens((current) =>
-                            current.map((item) =>
-                              item.id === token.id
-                                ? { ...item, expiresAt: event.target.value || null }
-                                : item,
-                            ),
-                          )
-                        }
-                      />
-                    </label>
-                    <label className="admin-switch">
-                      <input
-                        type="checkbox"
-                        checked={token.isActive}
-                        onChange={(event) =>
-                          setDiscountTokens((current) =>
-                            current.map((item) =>
-                              item.id === token.id
-                                ? { ...item, isActive: event.target.checked }
-                                : item,
-                            ),
-                          )
-                        }
-                      />
-                      Activo
-                    </label>
-                    <div className="admin-inline-actions">
-                      <button type="button" className="btn-edit" onClick={() => handleDiscountSave(token)}>
-                        <FaSave />
-                        <span>Guardar</span>
-                      </button>
-                      <button type="button" className="btn-reject" onClick={() => handleDiscountDelete(token.id)}>
-                        <FaTrash />
-                        <span>Eliminar</span>
-                      </button>
-                    </div>
+                    <p>{qr.instructions || "Sin instrucciones"}</p>
                   </article>
                 ))}
               </div>
@@ -1245,18 +1482,28 @@ export default function AdminDashboard() {
                 <span className="admin-kicker">Contenido</span>
                 <h2>Hero de la landing</h2>
               </div>
-              <button type="button" className="btn-approve" onClick={handleHeroCreate}>
-                <FaPlus />
-                <span>Nuevo slide</span>
-              </button>
+              <div className="admin-inline-actions">
+                <div className="admin-view-toggle">
+                  <button type="button" className={landingViewMode === "grid" ? "is-active" : ""} onClick={() => setLandingViewMode("grid")}>
+                    <FaThLarge /> Mosaico
+                  </button>
+                  <button type="button" className={landingViewMode === "list" ? "is-active" : ""} onClick={() => setLandingViewMode("list")}>
+                    <FaList /> Lista
+                  </button>
+                </div>
+                <button type="button" className="btn-approve" onClick={handleHeroCreate}>
+                  <FaPlus />
+                  <span>Nuevo slide</span>
+                </button>
+              </div>
             </div>
 
             <section className="admin-panel-card">
-              <div className="admin-editor-grid admin-editor-grid--preview">
+              <div className={`admin-preview-grid admin-preview-grid--${landingViewMode}`}>
                 {heroSlides.map((slide) => (
                   <article
                     key={slide.id}
-                    className="admin-editor-card admin-editor-card--draggable"
+                    className="admin-preview-tile admin-preview-tile--image admin-editor-card--draggable"
                     draggable
                     onDragStart={() => setDraggedHeroId(slide.id)}
                     onDragOver={(event) => event.preventDefault()}
@@ -1269,47 +1516,10 @@ export default function AdminDashboard() {
                         <strong>{slide.altText || "Slide sin alt"}</strong>
                       </div>
                     </div>
-                    <label>
-                      Subir imagen
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={(event) => handleHeroUpload(slide, event.target.files?.[0])}
-                      />
-                    </label>
-                    <label>
-                      Alt
-                      <input
-                        value={slide.altText}
-                        onChange={(event) =>
-                          setHeroSlides((current) =>
-                            current.map((item) =>
-                              item.id === slide.id ? { ...item, altText: event.target.value } : item,
-                            ),
-                          )
-                        }
-                      />
-                    </label>
-                    <label>
-                      <input
-                        type="checkbox"
-                        checked={slide.isActive}
-                        onChange={(event) =>
-                          setHeroSlides((current) =>
-                            current.map((item) =>
-                              item.id === slide.id
-                                ? { ...item, isActive: event.target.checked }
-                                : item,
-                            ),
-                          )
-                        }
-                      />
-                      Activo
-                    </label>
                     <div className="admin-inline-actions">
-                      <button type="button" className="btn-edit" onClick={() => handleHeroSave(slide)}>
-                        <FaSave />
-                        <span>Guardar</span>
+                      <button type="button" className="btn-edit" onClick={() => setEditorModal({ type: "hero", id: slide.id })}>
+                        <FaEdit />
+                        <span>Editar</span>
                       </button>
                       <button type="button" className="btn-reject" onClick={() => handleHeroDelete(slide.id)}>
                         <FaTrash />
@@ -1330,18 +1540,28 @@ export default function AdminDashboard() {
                 <span className="admin-kicker">Contenido</span>
                 <h2>Novedades y promos</h2>
               </div>
-              <button type="button" className="btn-approve" onClick={handleNoveltyCreate}>
-                <FaPlus />
-                <span>Nueva novedad</span>
-              </button>
+              <div className="admin-inline-actions">
+                <div className="admin-view-toggle">
+                  <button type="button" className={noveltyViewMode === "grid" ? "is-active" : ""} onClick={() => setNoveltyViewMode("grid")}>
+                    <FaThLarge /> Mosaico
+                  </button>
+                  <button type="button" className={noveltyViewMode === "list" ? "is-active" : ""} onClick={() => setNoveltyViewMode("list")}>
+                    <FaList /> Lista
+                  </button>
+                </div>
+                <button type="button" className="btn-approve" onClick={handleNoveltyCreate}>
+                  <FaPlus />
+                  <span>Nueva novedad</span>
+                </button>
+              </div>
             </div>
 
             <section className="admin-panel-card">
-              <div className="admin-editor-grid admin-editor-grid--preview">
+              <div className={`admin-preview-grid admin-preview-grid--${noveltyViewMode}`}>
                 {noveltyItems.map((item) => (
                   <article
                     key={item.id}
-                    className="admin-editor-card admin-editor-card--draggable"
+                    className="admin-preview-tile admin-preview-tile--image admin-editor-card--draggable"
                     draggable
                     onDragStart={() => setDraggedNoveltyId(item.id)}
                     onDragOver={(event) => event.preventDefault()}
@@ -1354,95 +1574,10 @@ export default function AdminDashboard() {
                         <strong>{item.title}</strong>
                       </div>
                     </div>
-                    <label>
-                      Titulo
-                      <input
-                        value={item.title}
-                        onChange={(event) =>
-                          setNoveltyItems((current) =>
-                            current.map((entry) =>
-                              entry.id === item.id ? { ...entry, title: event.target.value } : entry,
-                            ),
-                          )
-                        }
-                      />
-                    </label>
-                    <label>
-                      Descripcion
-                      <textarea
-                        value={item.description}
-                        onChange={(event) =>
-                          setNoveltyItems((current) =>
-                            current.map((entry) =>
-                              entry.id === item.id
-                                ? { ...entry, description: event.target.value }
-                                : entry,
-                            ),
-                          )
-                        }
-                      />
-                    </label>
-                    <label>
-                      Imagen
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={(event) => handleNoveltyUpload(item, event.target.files?.[0])}
-                      />
-                    </label>
-                    <label>
-                      Badge
-                      <input
-                        value={item.badge}
-                        onChange={(event) =>
-                          setNoveltyItems((current) =>
-                            current.map((entry) =>
-                              entry.id === item.id ? { ...entry, badge: event.target.value } : entry,
-                            ),
-                          )
-                        }
-                      />
-                    </label>
-                    <label>
-                      Precio
-                      <input
-                        type="number"
-                        step="0.5"
-                        value={item.price ?? ""}
-                        onChange={(event) =>
-                          setNoveltyItems((current) =>
-                            current.map((entry) =>
-                              entry.id === item.id
-                                ? {
-                                    ...entry,
-                                    price: event.target.value ? Number(event.target.value) : null,
-                                  }
-                                : entry,
-                            ),
-                          )
-                        }
-                      />
-                    </label>
-                    <label className="admin-switch">
-                      <input
-                        type="checkbox"
-                        checked={item.isActive}
-                        onChange={(event) =>
-                          setNoveltyItems((current) =>
-                            current.map((entry) =>
-                              entry.id === item.id
-                                ? { ...entry, isActive: event.target.checked }
-                                : entry,
-                            ),
-                          )
-                        }
-                      />
-                      Activa
-                    </label>
                     <div className="admin-inline-actions">
-                      <button type="button" className="btn-edit" onClick={() => handleNoveltySave(item)}>
-                        <FaSave />
-                        <span>Guardar</span>
+                      <button type="button" className="btn-edit" onClick={() => setEditorModal({ type: "novelty", id: item.id })}>
+                        <FaEdit />
+                        <span>Editar</span>
                       </button>
                       <button type="button" className="btn-reject" onClick={() => handleNoveltyDelete(item.id)}>
                         <FaTrash />
@@ -1457,86 +1592,22 @@ export default function AdminDashboard() {
             {pedidosYaPromo ? (
               <section className="admin-panel-card">
                 <h3>Bloque PedidosYa</h3>
-                <div className="admin-editor-grid admin-editor-grid--single">
-                  <article className="admin-editor-card">
-                    <label>
-                      Titulo
-                      <input
-                        value={pedidosYaPromo.title}
-                        onChange={(event) =>
-                          setPedidosYaPromo((current) =>
-                            current ? { ...current, title: event.target.value } : current,
-                          )
-                        }
-                      />
-                    </label>
-                    <label>
-                      Descripcion
-                      <textarea
-                        value={pedidosYaPromo.description}
-                        onChange={(event) =>
-                          setPedidosYaPromo((current) =>
-                            current ? { ...current, description: event.target.value } : current,
-                          )
-                        }
-                      />
-                    </label>
-                    <label>
-                      Imagen
-                      <input
-                        value={pedidosYaPromo.imagePath}
-                        onChange={(event) =>
-                          setPedidosYaPromo((current) =>
-                            current ? { ...current, imagePath: event.target.value } : current,
-                          )
-                        }
-                      />
-                    </label>
-                    <label>
-                      CTA label
-                      <input
-                        value={pedidosYaPromo.ctaLabel}
-                        onChange={(event) =>
-                          setPedidosYaPromo((current) =>
-                            current ? { ...current, ctaLabel: event.target.value } : current,
-                          )
-                        }
-                      />
-                    </label>
-                    <label>
-                      CTA URL
-                      <input
-                        value={pedidosYaPromo.ctaUrl}
-                        onChange={(event) =>
-                          setPedidosYaPromo((current) =>
-                            current ? { ...current, ctaUrl: event.target.value } : current,
-                          )
-                        }
-                      />
-                    </label>
-                    <label>
-                      Puntos
-                      <textarea
-                        value={pedidosYaPromo.points.join("\n")}
-                        onChange={(event) =>
-                          setPedidosYaPromo((current) =>
-                            current
-                              ? {
-                                  ...current,
-                                  points: event.target.value
-                                    .split("\n")
-                                    .map((value) => value.trim())
-                                    .filter(Boolean),
-                                }
-                              : current,
-                          )
-                        }
-                      />
-                    </label>
-                    <button type="button" className="btn-edit" onClick={handlePedidosYaSave}>
-                      <FaSave />
-                      <span>Guardar bloque</span>
-                    </button>
+                <div className="admin-preview-grid admin-preview-grid--list">
+                  <article className="admin-preview-tile admin-preview-tile--image">
+                    <div className="admin-preview-card">
+                      <img src={pedidosYaPromo.imagePath} alt={pedidosYaPromo.title} />
+                      <div>
+                        <span>{pedidosYaPromo.isActive ? "Activo" : "Inactivo"}</span>
+                        <strong>{pedidosYaPromo.title}</strong>
+                      </div>
+                    </div>
+                    <p>{pedidosYaPromo.description}</p>
+                    <div className="admin-inline-actions">
+                      <button type="button" className="btn-edit" onClick={() => setEditorModal({ type: "pedidosya", id: pedidosYaPromo.id })}>
+                        <FaEdit />
+                        <span>Editar bloque</span>
+                      </button>
+                    </div>
                   </article>
                 </div>
               </section>
@@ -1696,6 +1767,111 @@ export default function AdminDashboard() {
               </table>
             </div>
           </section>
+        ) : null}
+
+        {editorModal ? (
+          <div className="admin-modal" role="dialog" aria-modal="true">
+            <div className="admin-modal-card">
+              <div className="admin-modal-head">
+                <div>
+                  <span className="admin-kicker">Editar</span>
+                  <h2>
+                    {editorModal.type === "pricing" ? "Precio" : null}
+                    {editorModal.type === "discount" ? "Token" : null}
+                    {editorModal.type === "hero" ? "Slide" : null}
+                    {editorModal.type === "novelty" ? "Novedad" : null}
+                    {editorModal.type === "pedidosya" ? "PedidosYa" : null}
+                  </h2>
+                </div>
+                <button type="button" className="admin-modal-close" onClick={() => setEditorModal(null)}>
+                  <FaTimes />
+                </button>
+              </div>
+
+              {editingPricing ? (
+                <div className="admin-modal-form">
+                  <label>Etiqueta<input value={editingPricing.label} onChange={(event) => setPricingRules((current) => current.map((item) => item.id === editingPricing.id ? { ...item, label: event.target.value } : item))} /></label>
+                  <div className="admin-mini-grid">
+                    <label>Duracion<input type="number" value={editingPricing.durationMinutes} onChange={(event) => setPricingRules((current) => current.map((item) => item.id === editingPricing.id ? { ...item, durationMinutes: Number(event.target.value) } : item))} /></label>
+                    <label>Personas<input type="number" value={editingPricing.personCount} onChange={(event) => setPricingRules((current) => current.map((item) => item.id === editingPricing.id ? { ...item, personCount: Number(event.target.value) } : item))} /></label>
+                    <label>Precio Bs<input type="number" step="0.5" value={editingPricing.price} onChange={(event) => setPricingRules((current) => current.map((item) => item.id === editingPricing.id ? { ...item, price: Number(event.target.value) } : item))} /></label>
+                  </div>
+                  <label>Orden<input type="number" value={editingPricing.sortOrder} onChange={(event) => setPricingRules((current) => current.map((item) => item.id === editingPricing.id ? { ...item, sortOrder: Number(event.target.value) } : item))} /></label>
+                  <label className="admin-switch"><input type="checkbox" checked={editingPricing.isActive} onChange={(event) => setPricingRules((current) => current.map((item) => item.id === editingPricing.id ? { ...item, isActive: event.target.checked } : item))} />Activo</label>
+                  <button type="button" className="btn-edit" onClick={() => { handlePricingSave(editingPricing); setEditorModal(null) }}><FaSave />Guardar precio</button>
+                </div>
+              ) : null}
+
+              {editingToken ? (
+                <div className="admin-modal-form">
+                  <label>Codigo<input value={editingToken.code} onChange={(event) => setDiscountTokens((current) => current.map((item) => item.id === editingToken.id ? { ...item, code: event.target.value.toUpperCase() } : item))} /></label>
+                  <label>Nombre interno<input value={editingToken.label} onChange={(event) => setDiscountTokens((current) => current.map((item) => item.id === editingToken.id ? { ...item, label: event.target.value } : item))} /></label>
+                  <div className="admin-mini-grid">
+                    <label>Tipo<select value={editingToken.discountType} onChange={(event) => setDiscountTokens((current) => current.map((item) => item.id === editingToken.id ? { ...item, discountType: event.target.value as AdminDiscountToken["discountType"] } : item))}><option value="percent">Porcentaje</option><option value="fixed">Monto fijo</option></select></label>
+                    <label>Valor<input type="number" step="0.5" value={editingToken.discountValue} onChange={(event) => setDiscountTokens((current) => current.map((item) => item.id === editingToken.id ? { ...item, discountValue: Number(event.target.value) } : item))} /></label>
+                    <label>Usos<input type="number" min="1" value={editingToken.maxUses} onChange={(event) => setDiscountTokens((current) => current.map((item) => item.id === editingToken.id ? { ...item, maxUses: Number(event.target.value) } : item))} /></label>
+                  </div>
+                  <label>Expira<input type="datetime-local" value={editingToken.expiresAt ? editingToken.expiresAt.slice(0, 16) : ""} onChange={(event) => setDiscountTokens((current) => current.map((item) => item.id === editingToken.id ? { ...item, expiresAt: event.target.value || null } : item))} /></label>
+                  <label className="admin-switch"><input type="checkbox" checked={editingToken.isActive} onChange={(event) => setDiscountTokens((current) => current.map((item) => item.id === editingToken.id ? { ...item, isActive: event.target.checked } : item))} />Activo</label>
+                  <button type="button" className="btn-edit" onClick={() => { handleDiscountSave(editingToken); setEditorModal(null) }}><FaSave />Guardar token</button>
+                </div>
+              ) : null}
+
+              {editingHero ? (
+                <div className="admin-modal-form">
+                  <div className="admin-preview-card"><img src={editingHero.imagePath} alt={editingHero.altText} /><div><span>Vista previa</span><strong>{editingHero.altText}</strong></div></div>
+                  <label>Subir imagen<input type="file" accept="image/*" onChange={(event) => handleHeroUpload(editingHero, event.target.files?.[0])} /></label>
+                  <label>Alt<input value={editingHero.altText} onChange={(event) => setHeroSlides((current) => current.map((item) => item.id === editingHero.id ? { ...item, altText: event.target.value } : item))} /></label>
+                  <label className="admin-switch"><input type="checkbox" checked={editingHero.isActive} onChange={(event) => setHeroSlides((current) => current.map((item) => item.id === editingHero.id ? { ...item, isActive: event.target.checked } : item))} />Activo</label>
+                  <button type="button" className="btn-edit" onClick={() => { handleHeroSave(editingHero); setEditorModal(null) }}><FaSave />Guardar slide</button>
+                </div>
+              ) : null}
+
+              {editingNovelty ? (
+                <div className="admin-modal-form">
+                  <div className="admin-preview-card"><img src={editingNovelty.imagePath} alt={editingNovelty.title} /><div><span>{editingNovelty.badge}</span><strong>{editingNovelty.title}</strong></div></div>
+                  <label>Titulo<input value={editingNovelty.title} onChange={(event) => setNoveltyItems((current) => current.map((item) => item.id === editingNovelty.id ? { ...item, title: event.target.value } : item))} /></label>
+                  <label>Descripcion<textarea value={editingNovelty.description} onChange={(event) => setNoveltyItems((current) => current.map((item) => item.id === editingNovelty.id ? { ...item, description: event.target.value } : item))} /></label>
+                  <label>Imagen<input type="file" accept="image/*" onChange={(event) => handleNoveltyUpload(editingNovelty, event.target.files?.[0])} /></label>
+                  <div className="admin-mini-grid">
+                    <label>Badge<input value={editingNovelty.badge} onChange={(event) => setNoveltyItems((current) => current.map((item) => item.id === editingNovelty.id ? { ...item, badge: event.target.value } : item))} /></label>
+                    <label>Precio<input type="number" step="0.5" value={editingNovelty.price ?? ""} onChange={(event) => setNoveltyItems((current) => current.map((item) => item.id === editingNovelty.id ? { ...item, price: event.target.value ? Number(event.target.value) : null } : item))} /></label>
+                  </div>
+                  <label className="admin-switch"><input type="checkbox" checked={editingNovelty.isActive} onChange={(event) => setNoveltyItems((current) => current.map((item) => item.id === editingNovelty.id ? { ...item, isActive: event.target.checked } : item))} />Activa</label>
+                  <button type="button" className="btn-edit" onClick={() => { handleNoveltySave(editingNovelty); setEditorModal(null) }}><FaSave />Guardar novedad</button>
+                </div>
+              ) : null}
+
+              {editingPedidosYa ? (
+                <div className="admin-modal-form">
+                  <div className="admin-preview-card"><img src={editingPedidosYa.imagePath} alt={editingPedidosYa.title} /><div><span>PedidosYa</span><strong>{editingPedidosYa.title}</strong></div></div>
+                  <label>Titulo<input value={editingPedidosYa.title} onChange={(event) => setPedidosYaPromo((current) => current ? { ...current, title: event.target.value } : current)} /></label>
+                  <label>Descripcion<textarea value={editingPedidosYa.description} onChange={(event) => setPedidosYaPromo((current) => current ? { ...current, description: event.target.value } : current)} /></label>
+                  <label>Subir imagen<input type="file" accept="image/*" onChange={(event) => handlePedidosYaUpload(event.target.files?.[0])} /></label>
+                  <label>CTA label<input value={editingPedidosYa.ctaLabel} onChange={(event) => setPedidosYaPromo((current) => current ? { ...current, ctaLabel: event.target.value } : current)} /></label>
+                  <label>CTA URL<input value={editingPedidosYa.ctaUrl} onChange={(event) => setPedidosYaPromo((current) => current ? { ...current, ctaUrl: event.target.value } : current)} /></label>
+                  <label>Puntos<textarea value={editingPedidosYa.points.join("\n")} onChange={(event) => setPedidosYaPromo((current) => current ? { ...current, points: event.target.value.split("\n").map((value) => value.trim()).filter(Boolean) } : current)} /></label>
+                  <label className="admin-switch"><input type="checkbox" checked={editingPedidosYa.isActive} onChange={(event) => setPedidosYaPromo((current) => current ? { ...current, isActive: event.target.checked } : current)} />Activo</label>
+                  <button type="button" className="btn-edit" onClick={() => { handlePedidosYaSave(); setEditorModal(null) }}><FaSave />Guardar bloque</button>
+                </div>
+              ) : null}
+
+              {editingPaymentQr ? (
+                <div className="admin-modal-form">
+                  <div className="admin-preview-card admin-preview-card--qr">
+                    <img src={editingPaymentQr.imagePath} alt={editingPaymentQr.label} />
+                    <div><span>QR activo</span><strong>{editingPaymentQr.label}</strong></div>
+                  </div>
+                  <label>Nombre<input value={editingPaymentQr.label} onChange={(event) => setPaymentQrs((current) => current.map((item) => item.id === editingPaymentQr.id ? { ...item, label: event.target.value } : item))} /></label>
+                  <label>Subir nuevo QR<input type="file" accept="image/*" onChange={(event) => handlePaymentQrUpload(editingPaymentQr, event.target.files?.[0])} /></label>
+                  <label>Instrucciones<textarea value={editingPaymentQr.instructions || ""} onChange={(event) => setPaymentQrs((current) => current.map((item) => item.id === editingPaymentQr.id ? { ...item, instructions: event.target.value } : item))} /></label>
+                  <label className="admin-switch"><input type="checkbox" checked={editingPaymentQr.isActive} onChange={(event) => setPaymentQrs((current) => current.map((item) => item.id === editingPaymentQr.id ? { ...item, isActive: event.target.checked } : item))} />Activo</label>
+                  <label>Clave para cambiar QR<input type="password" value={qrSecret} onChange={(event) => setQrSecret(event.target.value)} placeholder="Clave obligatoria" /></label>
+                  <button type="button" className="btn-edit" onClick={() => { handlePaymentQrSave(editingPaymentQr); setEditorModal(null) }}><FaSave />Guardar QR protegido</button>
+                </div>
+              ) : null}
+            </div>
+          </div>
         ) : null}
       </section>
     </main>
