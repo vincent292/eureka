@@ -3,8 +3,15 @@
   grid-template-columns: 280px minmax(0, 1fr);
   min-height: 100vh;
   background:
-    radial-gradient(circle at top right, rgba(248, 221, 153, 0.18), transparent 24%),
-    linear-gradient(180deg, #102125 0%, #eef3e6 38%, #f7f4ec 100%);
+    radial-gradient(circle at top right, rgba(215, 236, 153, 0.18), transparent 24%),
+    radial-gradient(circle at left center, rgba(132, 186, 74, 0.1), transparent 28%),
+    linear-gradient(180deg, #18241a 0%, #ebf1cf 38%, #f4f7df 100%);
+}
+
+.admin-sidebar-toggle,
+.admin-sidebar-backdrop,
+.admin-sidebar__close {
+  display: none;
 }
 
 .admin-sidebar {
@@ -15,8 +22,10 @@
   gap: 1.4rem;
   min-height: 100vh;
   padding: 1.4rem;
-  background: rgba(10, 29, 32, 0.96);
-  color: #f6f3eb;
+  background:
+    linear-gradient(180deg, rgba(24, 36, 26, 0.98), rgba(60, 88, 47, 0.96)),
+    rgba(10, 29, 32, 0.96);
+  color: #fbffef;
 }
 
 .admin-sidebar__brand {
@@ -27,7 +36,7 @@
   padding: 0.9rem;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 22px;
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .admin-sidebar__brand img {
@@ -43,7 +52,7 @@
 }
 
 .admin-sidebar__brand span {
-  color: rgba(246, 243, 235, 0.7);
+  color: rgba(251, 255, 239, 0.74);
   font-size: 0.88rem;
 }
 
@@ -67,8 +76,8 @@
 }
 
 .admin-sidebar__nav button.is-active {
-  background: linear-gradient(135deg, #7fad57, #537133);
-  color: #fffdf8;
+  background: linear-gradient(135deg, #dce98d, #84ba4a);
+  color: #13281b;
 }
 
 .admin-main {
@@ -85,12 +94,14 @@
   padding: 1rem 1.15rem;
   border: 1px solid rgba(16, 33, 37, 0.08);
   border-radius: 24px;
-  background: rgba(255, 253, 248, 0.86);
-  box-shadow: 0 20px 48px rgba(16, 33, 37, 0.08);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(242, 246, 223, 0.92)),
+    rgba(255, 253, 248, 0.86);
+  box-shadow: 0 20px 48px rgba(48, 68, 34, 0.08);
 }
 
 .admin-kicker {
-  color: #537133;
+  color: #5f8742;
   font-size: 0.76rem;
   font-weight: 800;
   letter-spacing: 0.12em;
@@ -122,7 +133,9 @@
 .admin-reservation-card textarea,
 .admin-editor-card input,
 .admin-editor-card textarea,
+.admin-editor-card select,
 .admin-price-card input,
+.admin-price-card select,
 .promo-box input,
 .contacts-table input {
   width: 100%;
@@ -156,7 +169,7 @@
   position: relative;
   width: 46px;
   padding: 0;
-  background: rgba(16, 33, 37, 0.08);
+  background: rgba(215, 236, 153, 0.42);
   color: #102125;
 }
 
@@ -175,8 +188,8 @@
 }
 
 .admin-signout {
-  background: #102125;
-  color: #fffdf8;
+  background: linear-gradient(135deg, #274128, #5f8742);
+  color: #fbffef;
 }
 
 .admin-toast,
@@ -184,7 +197,7 @@
   margin-bottom: 1rem;
   padding: 0.9rem 1rem;
   border-radius: 16px;
-  background: rgba(180, 224, 193, 0.2);
+  background: rgba(215, 236, 153, 0.28);
   color: #102125;
   font-weight: 700;
 }
@@ -195,8 +208,10 @@
   padding: 1rem;
   border: 1px solid rgba(16, 33, 37, 0.08);
   border-radius: 24px;
-  background: rgba(255, 253, 248, 0.88);
-  box-shadow: 0 20px 48px rgba(16, 33, 37, 0.08);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(242, 246, 223, 0.92)),
+    rgba(255, 253, 248, 0.88);
+  box-shadow: 0 20px 48px rgba(48, 68, 34, 0.08);
 }
 
 .admin-content {
@@ -210,6 +225,10 @@
   justify-content: space-between;
   gap: 1rem;
   margin-bottom: 0.95rem;
+}
+
+.admin-section-heading > .btn-approve {
+  flex: 0 0 auto;
 }
 
 .admin-stat-grid,
@@ -229,8 +248,8 @@
 .admin-stat-card {
   padding: 1rem;
   border-radius: 22px;
-  background: linear-gradient(145deg, rgba(16, 33, 37, 0.92), rgba(30, 66, 56, 0.86));
-  color: #fffdf8;
+  background: linear-gradient(145deg, rgba(24, 36, 26, 0.94), rgba(95, 135, 66, 0.88));
+  color: #fbffef;
 }
 
 .admin-stat-card span {
@@ -264,7 +283,9 @@
   padding: 0.95rem;
   border: 1px solid rgba(16, 33, 37, 0.08);
   border-radius: 18px;
-  background: #ffffff;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(247, 250, 235, 0.96)),
+    #ffffff;
 }
 
 .admin-booking-card {
@@ -326,15 +347,16 @@
 }
 
 .status-pill--pending_payment,
+.status-pill--pendiente_verificacion,
 .calendar-booking--pending_payment {
-  background: rgba(248, 221, 153, 0.28);
-  color: #8c6408;
+  background: rgba(232, 239, 132, 0.34);
+  color: #6e6a25;
 }
 
 .status-pill--confirmed,
 .calendar-booking--confirmed {
-  background: rgba(180, 224, 193, 0.28);
-  color: #2f6a3e;
+  background: rgba(215, 236, 153, 0.38);
+  color: #466630;
 }
 
 .status-pill--rejected,
@@ -351,18 +373,37 @@
 }
 
 .btn-edit {
-  background: #163a47;
-  color: #fffdf8;
+  background: linear-gradient(135deg, #274128, #5f8742);
+  color: #fbffef;
 }
 
 .btn-approve {
-  background: #7fad57;
-  color: #fffdf8;
+  background: linear-gradient(135deg, #dce98d, #84ba4a);
+  color: #13281b;
 }
 
 .btn-whatsapp {
   background: #25d366;
   color: #fffdf8;
+}
+
+.admin-proof-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  padding: 0.7rem 1rem;
+  border-radius: 999px;
+  background: rgba(39, 65, 40, 0.08);
+  color: #274128;
+  font-weight: 900;
+  text-decoration: none;
+}
+
+.admin-template-help {
+  margin: 0;
+  color: #58676b;
+  line-height: 1.55;
 }
 
 .admin-calendar-slot__body {
@@ -391,6 +432,99 @@
   gap: 0.55rem;
 }
 
+.admin-card-toolbar,
+.admin-inline-actions,
+.admin-mini-grid {
+  display: flex;
+  gap: 0.65rem;
+}
+
+.admin-card-toolbar {
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 0.25rem;
+}
+
+.admin-card-toolbar span {
+  color: #58676b;
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
+.admin-inline-actions {
+  flex-wrap: wrap;
+}
+
+.admin-inline-actions button {
+  flex: 1 1 140px;
+}
+
+.admin-mini-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.admin-switch {
+  display: inline-flex !important;
+  grid-auto-flow: column;
+  align-items: center;
+  justify-content: start;
+  gap: 0.5rem;
+  font-weight: 800;
+}
+
+.admin-switch input {
+  width: 18px;
+  height: 18px;
+}
+
+.admin-editor-grid--preview {
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.admin-editor-card--draggable {
+  cursor: grab;
+}
+
+.admin-preview-card {
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  min-height: 180px;
+  border-radius: 16px;
+  background: #18241a;
+}
+
+.admin-preview-card img {
+  width: 100%;
+  height: 180px;
+  object-fit: cover;
+}
+
+.admin-preview-card div {
+  position: absolute;
+  left: 0.8rem;
+  right: 0.8rem;
+  bottom: 0.8rem;
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.7rem;
+  border-radius: 12px;
+  background: rgba(18, 32, 22, 0.72);
+  color: #fbffef;
+}
+
+.admin-preview-card span {
+  color: rgba(251, 255, 239, 0.72);
+  font-size: 0.76rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.admin-preview-card strong {
+  color: #fbffef;
+}
+
 .admin-editor-grid--single {
   grid-template-columns: 1fr;
 }
@@ -405,8 +539,8 @@
 }
 
 .contacts-table thead {
-  background: #102125;
-  color: #fffdf8;
+  background: linear-gradient(135deg, #274128, #5f8742);
+  color: #fbffef;
 }
 
 .contacts-table th,
@@ -422,8 +556,70 @@
   }
 
   .admin-sidebar {
-    position: static;
-    min-height: auto;
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 1100;
+    width: min(340px, calc(100vw - 1.2rem));
+    height: 100vh;
+    min-height: 100vh;
+    padding-bottom: 1rem;
+    transform: translateX(calc(-100% - 1rem));
+    transition: transform 0.28s ease;
+  }
+
+  .admin-sidebar.is-open {
+    transform: translateX(0);
+  }
+
+  .admin-sidebar-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1090;
+    display: block;
+    border: 0;
+    background: rgba(18, 32, 22, 0.4);
+    backdrop-filter: blur(4px);
+  }
+
+  .admin-sidebar-toggle {
+    position: fixed;
+    top: 1rem;
+    left: 1rem;
+    z-index: 1080;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
+    min-height: 48px;
+    padding: 0.8rem 1rem;
+    border: 1px solid rgba(95, 135, 66, 0.18);
+    border-radius: 999px;
+    background: rgba(247, 250, 235, 0.92);
+    color: #274128;
+    box-shadow: 0 14px 28px rgba(48, 68, 34, 0.12);
+    cursor: pointer;
+  }
+
+  .admin-sidebar__close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    margin-left: auto;
+    border: 0;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.12);
+    color: #fbffef;
+    cursor: pointer;
+  }
+
+  .admin-sidebar__nav {
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  }
+
+  .admin-main {
+    padding-top: 4.9rem;
   }
 }
 
@@ -448,11 +644,41 @@
   .admin-signout {
     width: 100%;
   }
+
+  .admin-main {
+    padding-top: 4.9rem;
+  }
 }
 
 @media only screen and (max-width: 768px) {
   .admin-main {
+    padding: 4.9rem 0.85rem 0.85rem;
+  }
+
+  .admin-sidebar {
+    gap: 1rem;
     padding: 0.85rem;
+    width: min(320px, calc(100vw - 1rem));
+  }
+
+  .admin-sidebar__brand {
+    grid-template-columns: 52px minmax(0, 1fr) auto;
+    padding: 0.8rem;
+  }
+
+  .admin-sidebar__nav {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-sidebar__nav button {
+    min-height: 48px;
+  }
+
+  .admin-notifications,
+  .admin-panel-card,
+  .table-container,
+  .admin-topbar {
+    border-radius: 20px;
   }
 
   .contacts-table,
@@ -477,6 +703,18 @@
 
   .contacts-table td {
     border-bottom: 1px solid #eef2f4;
+    padding: 0.8rem 0.9rem;
+  }
+
+  .contacts-table td::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 0.35rem;
+    color: #5f8742;
+    font-size: 0.76rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
   }
 
   .contacts-table td:last-child {

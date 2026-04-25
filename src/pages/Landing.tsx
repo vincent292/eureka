@@ -47,47 +47,47 @@ export default function Landing() {
 
       heroTimeline
         .from(".landing-pill", {
-          y: 20,
+          y: 14,
           autoAlpha: 0,
-          duration: 0.55,
+          duration: 0.32,
         })
         .from(
           ".landing-hero__title-line",
           {
-            y: 60,
+            y: 34,
             autoAlpha: 0,
-            duration: 0.9,
-            stagger: 0.12,
+            duration: 0.46,
+            stagger: 0.07,
           },
-          "-=0.15",
+          "-=0.08",
         )
         .from(
           ".landing-hero__description",
           {
-            y: 26,
+            y: 18,
             autoAlpha: 0,
-            duration: 0.7,
+            duration: 0.34,
           },
-          "-=0.45",
+          "-=0.2",
         )
         .from(
           ".landing-hero__actions > *",
           {
-            y: 18,
+            y: 14,
             autoAlpha: 0,
-            duration: 0.55,
-            stagger: 0.1,
+            duration: 0.28,
+            stagger: 0.07,
           },
-          "-=0.3",
+          "-=0.15",
         )
         .from(
           ".landing-panel",
           {
-            x: 42,
+            x: 24,
             autoAlpha: 0,
-            duration: 0.8,
+            duration: 0.42,
           },
-          "-=0.65",
+          "-=0.24",
         )
 
       gsap.to(".landing-panel__glow", {
@@ -103,17 +103,17 @@ export default function Landing() {
         gsap.fromTo(
           element,
           {
-            y: 48,
+            y: 26,
             autoAlpha: 0,
           },
           {
             y: 0,
             autoAlpha: 1,
-            duration: 0.9,
+            duration: 0.42,
             ease: "power3.out",
             scrollTrigger: {
               trigger: element,
-              start: "top 84%",
+              start: "top 88%",
             },
           },
         )

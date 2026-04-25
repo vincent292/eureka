@@ -13,9 +13,11 @@
 .novedad-card {
   overflow: hidden;
   border-radius: 28px;
-  background: rgba(255, 255, 255, 0.84);
-  border: 1px solid rgba(16, 33, 37, 0.08);
-  box-shadow: 0 20px 45px rgba(16, 33, 37, 0.08);
+  background:
+    linear-gradient(180deg, rgba(249, 255, 236, 0.96), rgba(238, 255, 197, 0.92)),
+    rgba(255, 255, 255, 0.84);
+  border: 1px solid rgba(120, 214, 28, 0.16);
+  box-shadow: 0 24px 48px rgba(48, 89, 14, 0.1);
   transition:
     transform 0.3s ease,
     box-shadow 0.3s ease;
@@ -23,7 +25,7 @@
 
 .novedad-card:hover {
   transform: translateY(-8px);
-  box-shadow: 0 28px 60px rgba(16, 33, 37, 0.14);
+  box-shadow: 0 30px 64px rgba(48, 89, 14, 0.16);
 }
 
 .novedad-media {
@@ -46,8 +48,8 @@
   display: inline-flex;
   padding: 0.55rem 0.8rem;
   border-radius: 999px;
-  background: rgba(8, 25, 28, 0.8);
-  color: #f7f2e8;
+  background: rgba(20, 54, 6, 0.78);
+  color: #fbffef;
   font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -76,15 +78,15 @@
   flex: 0 0 auto;
   padding: 0.42rem 0.62rem;
   border-radius: 999px;
-  background: rgba(127, 173, 87, 0.16);
-  color: #537133;
+  background: rgba(223, 255, 114, 0.56);
+  color: #2d6503;
   font-size: 0.82rem;
   font-weight: 800;
 }
 
 .novedad-descripcion {
   margin: 0;
-  color: #5a696e;
+  color: #446150;
   line-height: 1.75;
 }
 
@@ -96,8 +98,8 @@
   margin: 2rem auto 0;
   padding: 0.9rem 1.5rem;
   border-radius: 999px;
-  background: #102125;
-  color: #f7f2e8;
+  background: linear-gradient(135deg, #18311f, #427d0d);
+  color: #fbffef;
   font-weight: 700;
   text-decoration: none;
   transition:

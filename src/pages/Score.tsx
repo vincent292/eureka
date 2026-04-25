@@ -32,47 +32,47 @@ export default function Score() {
 
       intro
         .from(".score-hero__eyebrow", {
-          y: 18,
+          y: 12,
           autoAlpha: 0,
-          duration: 0.45,
+          duration: 0.24,
         })
         .from(
           ".score-hero__title-line",
           {
-            y: 42,
+            y: 26,
             autoAlpha: 0,
-            duration: 0.8,
-            stagger: 0.1,
+            duration: 0.36,
+            stagger: 0.06,
           },
-          "-=0.15",
+          "-=0.08",
         )
         .from(
           ".score-hero__description",
           {
-            y: 24,
+            y: 16,
             autoAlpha: 0,
-            duration: 0.6,
+            duration: 0.3,
           },
-          "-=0.45",
+          "-=0.16",
         )
         .from(
           ".score-export-controls",
           {
-            y: 28,
+            y: 18,
             autoAlpha: 0,
-            duration: 0.65,
+            duration: 0.32,
           },
-          "-=0.2",
+          "-=0.12",
         )
         .from(
           ".score-card-shell",
           {
-            y: 30,
+            y: 20,
             autoAlpha: 0,
-            duration: 0.65,
-            stagger: 0.08,
+            duration: 0.34,
+            stagger: 0.05,
           },
-          "-=0.25",
+          "-=0.14",
         )
     }, pageRef)
 
@@ -92,7 +92,7 @@ export default function Score() {
         gsap.fromTo(
           lastCard,
           {
-            y: 40,
+            y: 22,
             autoAlpha: 0,
             scale: 0.985,
           },
@@ -100,7 +100,7 @@ export default function Score() {
             y: 0,
             autoAlpha: 1,
             scale: 1,
-            duration: 0.65,
+            duration: 0.34,
             ease: "power3.out",
           },
         )

@@ -2,7 +2,7 @@
   position: relative;
   min-height: 78vh;
   overflow: hidden;
-  background: #071518;
+  background: #0d1f15;
 }
 
 .hero-carousel__viewport {
@@ -35,8 +35,8 @@
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(180deg, rgba(7, 21, 24, 0.2), rgba(7, 21, 24, 0.72)),
-    linear-gradient(90deg, rgba(7, 21, 24, 0.48), rgba(7, 21, 24, 0.05) 42%, rgba(7, 21, 24, 0.42));
+    linear-gradient(180deg, rgba(13, 31, 21, 0.1), rgba(13, 31, 21, 0.76)),
+    linear-gradient(90deg, rgba(13, 31, 21, 0.56), rgba(13, 31, 21, 0.08) 42%, rgba(13, 31, 21, 0.48));
   z-index: 1;
 }
 
@@ -55,13 +55,13 @@
 .hero-carousel__ambient--left {
   top: 16%;
   left: -8%;
-  background: rgba(127, 173, 87, 0.28);
+  background: rgba(120, 214, 28, 0.34);
 }
 
 .hero-carousel__ambient--right {
   right: -6%;
   bottom: 8%;
-  background: rgba(248, 221, 153, 0.2);
+  background: rgba(249, 255, 87, 0.24);
 }
 
 .hero-carousel__indicators {
@@ -79,7 +79,7 @@
   height: 13px;
   border: 0;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.35);
+  background: rgba(247, 255, 216, 0.48);
   cursor: pointer;
   transition:
     transform 0.25s ease,
@@ -89,7 +89,7 @@
 
 .hero-carousel__dot.active {
   width: 42px;
-  background: #f8dd99;
+  background: #f9ff57;
 }
 
 @media only screen and (max-width: 1024px) {

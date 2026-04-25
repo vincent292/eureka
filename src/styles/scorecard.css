@@ -8,9 +8,9 @@
   border: 1px solid rgba(16, 33, 37, 0.08);
   border-radius: 32px;
   background:
-    radial-gradient(circle at top right, rgba(180, 224, 193, 0.18), transparent 26%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(242, 246, 235, 0.9));
-  box-shadow: 0 24px 55px rgba(16, 33, 37, 0.08);
+    radial-gradient(circle at top right, rgba(223, 255, 114, 0.24), transparent 26%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(241, 255, 208, 0.94));
+  box-shadow: 0 24px 55px rgba(41, 76, 12, 0.1);
 }
 
 .scorecard-container::before {
@@ -53,7 +53,7 @@
 }
 
 .scorecard-kicker {
-  color: #537133;
+  color: #427d0d;
   font-size: 0.74rem;
   font-weight: 700;
   letter-spacing: 0.12em;
@@ -65,7 +65,7 @@
   height: 56px;
   object-fit: cover;
   border-radius: 18px;
-  box-shadow: 0 10px 24px rgba(83, 113, 51, 0.14);
+  box-shadow: 0 12px 26px rgba(120, 214, 28, 0.18);
 }
 
 .scorecard-header__stats {
@@ -115,7 +115,7 @@
 }
 
 .scorecard-table-shell::-webkit-scrollbar-thumb {
-  background: rgba(83, 113, 51, 0.35);
+  background: rgba(120, 214, 28, 0.45);
   border-radius: 999px;
 }
 
@@ -143,7 +143,7 @@
   position: sticky;
   left: 0;
   z-index: 2;
-  background: linear-gradient(180deg, #173946, #102125);
+  background: linear-gradient(180deg, #315f0f, #173119);
   color: #f6f3eb;
   font-weight: 700;
 }
@@ -182,8 +182,8 @@
 
 .player-name:focus,
 .score-input:focus {
-  border-color: rgba(127, 173, 87, 0.72);
-  box-shadow: 0 0 0 4px rgba(180, 224, 193, 0.28);
+  border-color: rgba(120, 214, 28, 0.72);
+  box-shadow: 0 0 0 4px rgba(223, 255, 114, 0.32);
   background: #ffffff;
 }
 
@@ -207,7 +207,7 @@
 }
 
 .totals-row {
-  background: rgba(127, 173, 87, 0.16);
+  background: rgba(223, 255, 114, 0.32);
   color: #1d3321;
   font-weight: 700;
 }
@@ -234,7 +234,7 @@
   padding: 0.8rem 1.15rem;
   border: 0;
   border-radius: 999px;
-  background: linear-gradient(135deg, #173946, #102125);
+  background: linear-gradient(135deg, #173119, #427d0d);
   color: #f6f3eb;
   cursor: pointer;
   font-weight: 700;
@@ -257,7 +257,8 @@
 }
 
 .scorecard-action--accent {
-  background: linear-gradient(135deg, #7fad57, #537133);
+  background: linear-gradient(135deg, #f9ff57, #78d61c);
+  color: #13281b;
 }
 
 .remove-player-btn {

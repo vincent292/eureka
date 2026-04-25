@@ -1,6 +1,6 @@
 import { useState } from "react"
 import type { FormEvent } from "react"
-import { useNavigate } from "react-router-dom"
+import { Link, useNavigate } from "react-router-dom"
 import { supabase } from "../lib/supabaseClient"
 import "../styles/AdminLogin.css"
 
@@ -33,7 +33,13 @@ export default function AdminLogin() {
 
   return (
     <main className="admin-login-page">
+      <Link to="/" className="admin-login-home" aria-label="Volver a la landing">
+        <img src="/image/eureka.png" alt="Eureka" />
+        <span>Volver al sitio</span>
+      </Link>
+
       <form className="admin-login-card" onSubmit={handleSubmit}>
+        <img src="/image/eureka.png" alt="Eureka" className="admin-login-logo" />
         <span>Panel Eureka</span>
         <h1>Ingreso administrador</h1>
 
