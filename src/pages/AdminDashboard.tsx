@@ -12,6 +12,7 @@ import {
   FaPercent,
   FaQrcode,
   FaSave,
+  FaShieldAlt,
   FaSignOutAlt,
   FaTags,
   FaThLarge,
@@ -36,6 +37,7 @@ import {
   fetchAdminRestaurantTables,
   fetchAdminLiveOrders,
   fetchAdminPricingRules,
+  fetchSuperAdminOverview,
   cleanupOldOrderReceipts,
   createDiscountToken,
   createHeroSlide,
@@ -57,6 +59,7 @@ import {
   deleteProductVariant,
   deletePricingRule,
   deleteRestaurantTable,
+  deleteSuperAdminEntity,
   markNotificationSeen,
   reorderHeroSlides,
   reorderNoveltyItems,
@@ -76,6 +79,7 @@ import {
   updatePricingRule,
   updateLiveOrderStatus,
   updateRestaurantTable,
+  runSuperAdminBulkAction,
   uploadAdminImage,
   type AdminBooking,
   type AdminDiscountToken,
@@ -96,7 +100,11 @@ import {
   type AdminOrderStatus,
   type AdminPaymentStatus,
   type AdminRestaurantTable,
+  type SuperAdminBulkAction,
+  type SuperAdminEntityType,
+  type SuperAdminOverview,
 } from "../lib/adminDashboardService"
+import { getCurrentAdminProfile, type CurrentAdminProfile } from "../lib/adminAuth"
 import { supabase } from "../lib/supabaseClient"
 import "../styles/AdminDashboard.css"
 
@@ -112,6 +120,23 @@ type ReservationViewMode = "grid" | "list"
 type CalendarViewMode = "day" | "week" | "month"
 type AdminViewMode = "grid" | "list"
 type ProductStatusFilter = "all" | "active" | "inactive"
+type SuperAdminConfirmAction =
+  | {
+      kind: "bulk"
+      action: SuperAdminBulkAction
+      title: string
+      description: string
+      confirmation: string
+    }
+  | {
+      kind: "entity"
+      entityType: SuperAdminEntityType
+      entityId: string
+      title: string
+      description: string
+      confirmation?: string
+    }
+
 type AdminEditorModal =
   | { type: "pricing"; id: string }
   | { type: "discount"; id: string }
@@ -138,6 +163,7 @@ type AdminSection =
   | "novelties"
   | "messages"
   | "contacts"
+  | "superAdmin"
 
 const adminSections: Array<{
   id: AdminSection
@@ -157,6 +183,7 @@ const adminSections: Array<{
   { id: "novelties", label: "Novedades", icon: FaTags },
   { id: "messages", label: "Mensajes", icon: FaWhatsapp },
   { id: "contacts", label: "Contactos", icon: FaUsers },
+  { id: "superAdmin", label: "Super Admin", icon: FaShieldAlt },
 ]
 
 const today = new Date().toISOString().slice(0, 10)
@@ -337,6 +364,8 @@ export default function AdminDashboard() {
   const [restaurantTables, setRestaurantTables] = useState<AdminRestaurantTable[]>([])
   const [liveOrders, setLiveOrders] = useState<AdminLiveOrder[]>([])
   const [messageTemplates, setMessageTemplates] = useState<AdminMessageTemplate[]>([])
+  const [adminProfile, setAdminProfile] = useState<CurrentAdminProfile | null>(null)
+  const [superAdminOverview, setSuperAdminOverview] = useState<SuperAdminOverview | null>(null)
   const [loading, setLoading] = useState(true)
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -353,6 +382,9 @@ export default function AdminDashboard() {
   const [orderSoundEnabled, setOrderSoundEnabled] = useState(false)
   const [clockTick, setClockTick] = useState(0)
   const [editorModal, setEditorModal] = useState<AdminEditorModal>(null)
+  const [superAdminConfirmAction, setSuperAdminConfirmAction] = useState<SuperAdminConfirmAction | null>(null)
+  const [superAdminConfirmation, setSuperAdminConfirmation] = useState("")
+  const [superAdminWorking, setSuperAdminWorking] = useState(false)
   const [qrSecret, setQrSecret] = useState("")
   const [pendingPaymentQrFiles, setPendingPaymentQrFiles] = useState<Record<string, File>>({})
   const [newPaymentQrFile, setNewPaymentQrFile] = useState<File | null>(null)
@@ -395,6 +427,9 @@ export default function AdminDashboard() {
     }
 
     try {
+      const nextAdminProfile = await getCurrentAdminProfile()
+      setAdminProfile(nextAdminProfile)
+
       const [
         nextBookings,
         nextCalendarBookings,
@@ -411,6 +446,7 @@ export default function AdminDashboard() {
         nextRestaurantTables,
         nextLiveOrders,
         nextMessageTemplates,
+        nextSuperAdminOverview,
       ] = await Promise.all([
         fetchAdminBookings(date),
         fetchAdminBookings(),
@@ -427,6 +463,7 @@ export default function AdminDashboard() {
         fetchAdminRestaurantTables(),
         fetchAdminLiveOrders(),
         fetchMessageTemplates(),
+        nextAdminProfile?.role === "super_admin" ? fetchSuperAdminOverview() : Promise.resolve(null),
       ])
 
       setBookings(nextBookings)
@@ -444,6 +481,7 @@ export default function AdminDashboard() {
       setRestaurantTables(nextRestaurantTables)
       setLiveOrders(nextLiveOrders)
       setMessageTemplates(nextMessageTemplates)
+      setSuperAdminOverview(nextSuperAdminOverview)
       setBookingNotes(
         Object.fromEntries(
           nextBookings.map((booking) => [booking.id, booking.adminNotes || ""]),
@@ -497,6 +535,12 @@ export default function AdminDashboard() {
   useEffect(() => {
     setSidebarOpen(false)
   }, [activeSection])
+
+  useEffect(() => {
+    if (activeSection === "superAdmin" && adminProfile?.role !== "super_admin") {
+      setActiveSection("overview")
+    }
+  }, [activeSection, adminProfile?.role])
 
   useEffect(() => {
     if (!newPaymentQrFile) {
@@ -1378,6 +1422,104 @@ export default function AdminDashboard() {
     }
   }
 
+  const openSuperAdminAction = (action: SuperAdminConfirmAction) => {
+    setSuperAdminConfirmAction(action)
+    setSuperAdminConfirmation("")
+  }
+
+  const executeSuperAdminAction = async () => {
+    if (!superAdminConfirmAction) return
+    const requiredConfirmation = superAdminConfirmAction.confirmation || ""
+
+    if (requiredConfirmation && superAdminConfirmation !== requiredConfirmation) {
+      setSaveMessage(`Debes escribir exactamente: ${requiredConfirmation}`)
+      return
+    }
+
+    setSuperAdminWorking(true)
+    try {
+      if (superAdminConfirmAction.kind === "bulk") {
+        await runSuperAdminBulkAction(superAdminConfirmAction.action, superAdminConfirmation)
+      } else {
+        await deleteSuperAdminEntity(
+          superAdminConfirmAction.entityType,
+          superAdminConfirmAction.entityId,
+          superAdminConfirmation,
+        )
+      }
+
+      setSaveMessage("Accion Super Admin ejecutada.")
+      setSuperAdminConfirmAction(null)
+      setSuperAdminConfirmation("")
+      await loadDashboard(selectedDate, false)
+    } catch (error) {
+      setSaveMessage(error instanceof Error ? error.message : "No se pudo ejecutar la accion.")
+    } finally {
+      setSuperAdminWorking(false)
+    }
+  }
+
+  const isSuperAdmin = adminProfile?.role === "super_admin"
+  const visibleAdminSections = adminSections.filter((section) => section.id !== "superAdmin" || isSuperAdmin)
+  const superAdminDangerActions: SuperAdminConfirmAction[] = [
+    {
+      kind: "bulk",
+      action: "delete_all_orders",
+      title: "Eliminar todos los pedidos",
+      description: "Borra pedidos, items, opciones y comprobantes asociados.",
+      confirmation: "ELIMINAR PEDIDOS",
+    },
+    {
+      kind: "bulk",
+      action: "delete_rejected_orders",
+      title: "Eliminar pedidos rechazados",
+      description: "Limpia solo los pedidos rechazados y sus comprobantes.",
+      confirmation: "ELIMINAR RECHAZADOS",
+    },
+    {
+      kind: "bulk",
+      action: "delete_all_bookings",
+      title: "Eliminar todas las reservas",
+      description: "Borra reservas, notificaciones y comprobantes relacionados.",
+      confirmation: "ELIMINAR RESERVAS",
+    },
+    {
+      kind: "bulk",
+      action: "delete_past_bookings",
+      title: "Eliminar reservas pasadas",
+      description: "Borra reservas anteriores a la fecha actual.",
+      confirmation: "ELIMINAR RESERVAS PASADAS",
+    },
+    {
+      kind: "bulk",
+      action: "reset_payment_qr",
+      title: "Resetear QR de pago",
+      description: "Elimina QR activos, historial e imagenes asociadas.",
+      confirmation: "RESET QR",
+    },
+    {
+      kind: "bulk",
+      action: "delete_catalog",
+      title: "Eliminar catalogo",
+      description: "Borra categorias, productos, variantes, opciones e imagenes.",
+      confirmation: "ELIMINAR CATALOGO",
+    },
+    {
+      kind: "bulk",
+      action: "delete_tables",
+      title: "Eliminar mesas",
+      description: "Borra mesas y pedidos asociados a mesas.",
+      confirmation: "ELIMINAR MESAS",
+    },
+    {
+      kind: "bulk",
+      action: "cleanup_old_receipts",
+      title: "Limpiar comprobantes antiguos",
+      description: "Marca como eliminados los comprobantes vencidos y borra archivos del storage.",
+      confirmation: "LIMPIAR COMPROBANTES",
+    },
+  ]
+
   const pendingLiveOrderCount = liveOrders.filter((order) =>
     ["new", "pending_review"].includes(order.orderStatus),
   ).length
@@ -1517,7 +1659,7 @@ export default function AdminDashboard() {
         </div>
 
         <nav className="admin-sidebar__nav">
-          {adminSections.map((section) => {
+          {visibleAdminSections.map((section) => {
             const Icon = section.icon
             return (
               <button
@@ -1542,6 +1684,11 @@ export default function AdminDashboard() {
           <div>
             <span className="admin-kicker">Dashboard</span>
             <h1>Panel administrador</h1>
+            {adminProfile ? (
+              <span className={`admin-role-badge ${isSuperAdmin ? "admin-role-badge--super" : ""}`}>
+                {isSuperAdmin ? "SUPER ADMIN" : adminProfile.role.toUpperCase()}
+              </span>
+            ) : null}
           </div>
 
           <div className="admin-topbar__actions">
@@ -1819,6 +1966,22 @@ export default function AdminDashboard() {
                       <FaWhatsapp />
                       Rechazo
                     </button>
+                    {isSuperAdmin ? (
+                      <button
+                        type="button"
+                        className="btn-danger"
+                        onClick={() => openSuperAdminAction({
+                          kind: "entity",
+                          entityType: "booking",
+                          entityId: booking.id,
+                          title: `Eliminar reserva ${booking.reservationCode}`,
+                          description: "Borra esta reserva, notificaciones y comprobante asociado.",
+                        })}
+                      >
+                        <FaTrash />
+                        Eliminar reserva
+                      </button>
+                    ) : null}
                   </div>
                 </article>
               ))}
@@ -2012,10 +2175,12 @@ export default function AdminDashboard() {
                       <FaEdit />
                       <span>Editar</span>
                     </button>
-                    <button type="button" className="btn-reject" onClick={() => handlePricingDelete(rule.id)}>
-                      <FaTrash />
-                      <span>Eliminar</span>
-                    </button>
+                    {isSuperAdmin ? (
+                      <button type="button" className="btn-reject" onClick={() => handlePricingDelete(rule.id)}>
+                        <FaTrash />
+                        <span>Eliminar</span>
+                      </button>
+                    ) : null}
                   </div>
                 </article>
               ))}
@@ -2061,10 +2226,12 @@ export default function AdminDashboard() {
                       <FaEdit />
                       <span>Editar</span>
                     </button>
-                    <button type="button" className="btn-reject" onClick={() => handleDiscountDelete(token.id)}>
-                      <FaTrash />
-                      <span>Eliminar</span>
-                    </button>
+                    {isSuperAdmin ? (
+                      <button type="button" className="btn-reject" onClick={() => handleDiscountDelete(token.id)}>
+                        <FaTrash />
+                        <span>Eliminar</span>
+                      </button>
+                    ) : null}
                   </div>
                 </article>
               ))}
@@ -2326,9 +2493,11 @@ export default function AdminDashboard() {
                     <button type="button" className="btn-edit" onClick={() => setEditorModal({ type: "productCategory", id: category.id })}>
                       <FaEdit />
                     </button>
-                    <button type="button" className="btn-reject" onClick={() => handleProductCategoryDelete(category)}>
-                      <FaTrash />
-                    </button>
+                    {isSuperAdmin ? (
+                      <button type="button" className="btn-reject" onClick={() => handleProductCategoryDelete(category)}>
+                        <FaTrash />
+                      </button>
+                    ) : null}
                   </article>
                 ))}
               </div>
@@ -2378,10 +2547,12 @@ export default function AdminDashboard() {
                         <FaEdit />
                         <span>Editar</span>
                       </button>
-                      <button type="button" className="btn-reject" onClick={() => handleProductDelete(product)}>
-                        <FaTrash />
-                        <span>Eliminar</span>
-                      </button>
+                      {isSuperAdmin ? (
+                        <button type="button" className="btn-reject" onClick={() => handleProductDelete(product)}>
+                          <FaTrash />
+                          <span>Eliminar</span>
+                        </button>
+                      ) : null}
                     </div>
                   </article>
                 )
@@ -2431,10 +2602,12 @@ export default function AdminDashboard() {
                       <FaEdit />
                       <span>Editar</span>
                     </button>
-                    <button type="button" className="btn-reject" onClick={() => handleTableDelete(table)}>
-                      <FaTrash />
-                      <span>Eliminar</span>
-                    </button>
+                    {isSuperAdmin ? (
+                      <button type="button" className="btn-reject" onClick={() => handleTableDelete(table)}>
+                        <FaTrash />
+                        <span>Eliminar</span>
+                      </button>
+                    ) : null}
                   </div>
                 </article>
               ))}
@@ -2528,6 +2701,22 @@ export default function AdminDashboard() {
                     <button type="button" className="btn-whatsapp" onClick={() => openOrderWhatsApp(order, order.orderStatus === "rejected" ? "rejected" : "accepted")}>
                       <FaWhatsapp />
                     </button>
+                    {isSuperAdmin ? (
+                      <button
+                        type="button"
+                        className="btn-danger"
+                        onClick={() => openSuperAdminAction({
+                          kind: "entity",
+                          entityType: "order",
+                          entityId: order.id,
+                          title: `Eliminar pedido ${order.orderCode}`,
+                          description: "Borra este pedido con items, opciones y comprobantes asociados.",
+                        })}
+                      >
+                        <FaTrash />
+                        Eliminar pedido
+                      </button>
+                    ) : null}
                   </div>
                 </article>
               ))}
@@ -2581,10 +2770,12 @@ export default function AdminDashboard() {
                         <FaEdit />
                         <span>Editar</span>
                       </button>
-                      <button type="button" className="btn-reject" onClick={() => handleHeroDelete(slide.id)}>
-                        <FaTrash />
-                        <span>Eliminar</span>
-                      </button>
+                      {isSuperAdmin ? (
+                        <button type="button" className="btn-reject" onClick={() => handleHeroDelete(slide.id)}>
+                          <FaTrash />
+                          <span>Eliminar</span>
+                        </button>
+                      ) : null}
                     </div>
                   </article>
                 ))}
@@ -2639,10 +2830,12 @@ export default function AdminDashboard() {
                         <FaEdit />
                         <span>Editar</span>
                       </button>
-                      <button type="button" className="btn-reject" onClick={() => handleNoveltyDelete(item.id)}>
-                        <FaTrash />
-                        <span>Eliminar</span>
-                      </button>
+                      {isSuperAdmin ? (
+                        <button type="button" className="btn-reject" onClick={() => handleNoveltyDelete(item.id)}>
+                          <FaTrash />
+                          <span>Eliminar</span>
+                        </button>
+                      ) : null}
                     </div>
                   </article>
                 ))}
@@ -2730,6 +2923,276 @@ export default function AdminDashboard() {
                 </article>
               ))}
             </div>
+          </section>
+        ) : null}
+
+        {!loading && activeSection === "superAdmin" && isSuperAdmin ? (
+          <section className="admin-content admin-super-admin">
+            <div className="admin-section-heading">
+              <div>
+                <span className="admin-kicker">Acceso total</span>
+                <h2>Super Admin</h2>
+                <p className="admin-template-help">
+                  Acciones destructivas protegidas por rol y confirmacion fuerte. Esta zona no esta disponible para admins normales.
+                </p>
+              </div>
+            </div>
+
+            <div className="admin-super-grid">
+              <article className="admin-panel-card admin-super-card">
+                <span className="admin-kicker">Pedidos</span>
+                <strong>{superAdminOverview?.orders.total ?? liveOrders.length}</strong>
+                <p>{superAdminOverview?.orders.pending ?? 0} pendientes | {superAdminOverview?.orders.rejected ?? 0} rechazados</p>
+                <div className="admin-inline-actions">
+                  <button type="button" className="btn-edit" onClick={() => setActiveSection("orders")}>Ver pedidos</button>
+                  <button
+                    type="button"
+                    className="btn-danger"
+                    onClick={() => openSuperAdminAction(superAdminDangerActions[0])}
+                  >
+                    Eliminar todos
+                  </button>
+                </div>
+              </article>
+
+              <article className="admin-panel-card admin-super-card">
+                <span className="admin-kicker">Reservas</span>
+                <strong>{superAdminOverview?.bookings.total ?? calendarBookings.length}</strong>
+                <p>{superAdminOverview?.bookings.today ?? bookings.length} hoy | {superAdminOverview?.bookings.past ?? 0} pasadas</p>
+                <div className="admin-inline-actions">
+                  <button type="button" className="btn-edit" onClick={() => setActiveSection("reservations")}>Ver reservas</button>
+                  <button
+                    type="button"
+                    className="btn-danger"
+                    onClick={() => openSuperAdminAction(superAdminDangerActions[2])}
+                  >
+                    Eliminar todas
+                  </button>
+                </div>
+              </article>
+
+              <article className="admin-panel-card admin-super-card">
+                <span className="admin-kicker">QR de pago</span>
+                <strong>{superAdminOverview?.paymentQrs.active ?? paymentQrs.filter((qr) => qr.isActive).length}</strong>
+                <p>{superAdminOverview?.paymentQrs.history ?? paymentQrHistory.length} registros historicos</p>
+                <div className="admin-inline-actions">
+                  <button type="button" className="btn-edit" onClick={() => setActiveSection("paymentQr")}>Gestionar QR</button>
+                  <button
+                    type="button"
+                    className="btn-danger"
+                    onClick={() => openSuperAdminAction(superAdminDangerActions[4])}
+                  >
+                    Reset QR
+                  </button>
+                </div>
+              </article>
+
+              <article className="admin-panel-card admin-super-card">
+                <span className="admin-kicker">Catalogo</span>
+                <strong>{superAdminOverview?.catalog.products ?? products.length}</strong>
+                <p>{superAdminOverview?.catalog.categories ?? productCategories.length} categorias | {superAdminOverview?.catalog.activeProducts ?? products.filter((product) => product.isActive).length} activos</p>
+                <div className="admin-inline-actions">
+                  <button type="button" className="btn-edit" onClick={() => setActiveSection("products")}>Ver productos</button>
+                  <button
+                    type="button"
+                    className="btn-danger"
+                    onClick={() => openSuperAdminAction(superAdminDangerActions[5])}
+                  >
+                    Eliminar catalogo
+                  </button>
+                </div>
+              </article>
+
+              <article className="admin-panel-card admin-super-card">
+                <span className="admin-kicker">Mesas</span>
+                <strong>{superAdminOverview?.tables.total ?? restaurantTables.length}</strong>
+                <p>{superAdminOverview?.tables.active ?? restaurantTables.filter((table) => table.isActive).length} mesas activas</p>
+                <div className="admin-inline-actions">
+                  <button type="button" className="btn-edit" onClick={() => setActiveSection("tables")}>Ver mesas</button>
+                  <button
+                    type="button"
+                    className="btn-danger"
+                    onClick={() => openSuperAdminAction(superAdminDangerActions[6])}
+                  >
+                    Eliminar mesas
+                  </button>
+                </div>
+              </article>
+            </div>
+
+            <section className="admin-panel-card admin-danger-zone">
+              <div className="admin-section-heading">
+                <div>
+                  <span className="admin-kicker">Zona peligrosa</span>
+                  <h2>Acciones irreversibles</h2>
+                  <p className="admin-template-help">Estas acciones se validan en Supabase con `is_super_admin()` y quedan registradas en auditoria.</p>
+                </div>
+              </div>
+
+              <div className="admin-danger-grid">
+                {superAdminDangerActions.map((action) => (
+                  <article key={action.title} className="admin-danger-card">
+                    <div>
+                      <strong>{action.title}</strong>
+                      <p>{action.description}</p>
+                      <small>Confirmacion: {action.confirmation}</small>
+                    </div>
+                    <button type="button" className="btn-danger" onClick={() => openSuperAdminAction(action)}>
+                      Ejecutar
+                    </button>
+                  </article>
+                ))}
+              </div>
+            </section>
+
+            <section className="admin-panel-card">
+              <div className="admin-section-heading">
+                <div>
+                  <span className="admin-kicker">Eliminacion individual</span>
+                  <h2>Registros recientes</h2>
+                  <p className="admin-template-help">Para limpieza puntual. Cada accion vuelve a validarse en Supabase.</p>
+                </div>
+              </div>
+
+              <div className="admin-super-lists">
+                <div>
+                  <h3>Pedidos</h3>
+                  {liveOrders.slice(0, 5).map((order) => (
+                    <article key={order.id} className="admin-super-list-row">
+                      <span>{order.orderCode} | Mesa {order.tableNumber || "-"}</span>
+                      <button
+                        type="button"
+                        className="btn-danger"
+                        onClick={() => openSuperAdminAction({
+                          kind: "entity",
+                          entityType: "order",
+                          entityId: order.id,
+                          title: `Eliminar pedido ${order.orderCode}`,
+                          description: "Borra el pedido completo con items, opciones y comprobantes.",
+                        })}
+                      >
+                        Borrar
+                      </button>
+                    </article>
+                  ))}
+                </div>
+
+                <div>
+                  <h3>Reservas</h3>
+                  {calendarBookings.slice(0, 5).map((booking) => (
+                    <article key={booking.id} className="admin-super-list-row">
+                      <span>{booking.reservationCode} | {booking.fullName}</span>
+                      <button
+                        type="button"
+                        className="btn-danger"
+                        onClick={() => openSuperAdminAction({
+                          kind: "entity",
+                          entityType: "booking",
+                          entityId: booking.id,
+                          title: `Eliminar reserva ${booking.reservationCode}`,
+                          description: "Borra la reserva y sus datos relacionados.",
+                        })}
+                      >
+                        Borrar
+                      </button>
+                    </article>
+                  ))}
+                </div>
+
+                <div>
+                  <h3>QR de pago</h3>
+                  {paymentQrs.slice(0, 5).map((qr) => (
+                    <article key={qr.id} className="admin-super-list-row">
+                      <span>{qr.label} | {qr.isActive ? "Activo" : "Inactivo"}</span>
+                      <button
+                        type="button"
+                        className="btn-danger"
+                        onClick={() => openSuperAdminAction({
+                          kind: "entity",
+                          entityType: "payment_qr",
+                          entityId: qr.id,
+                          title: `Eliminar QR ${qr.label}`,
+                          description: "Borra el registro del QR y su imagen asociada.",
+                          confirmation: qr.isActive ? "RESET QR" : undefined,
+                        })}
+                      >
+                        Borrar
+                      </button>
+                    </article>
+                  ))}
+                </div>
+
+                <div>
+                  <h3>Productos</h3>
+                  {products.slice(0, 5).map((product) => (
+                    <article key={product.id} className="admin-super-list-row">
+                      <span>{product.name}</span>
+                      <button
+                        type="button"
+                        className="btn-danger"
+                        onClick={() => openSuperAdminAction({
+                          kind: "entity",
+                          entityType: "product",
+                          entityId: product.id,
+                          title: `Eliminar producto ${product.name}`,
+                          description: "Borra el producto con variantes, grupos de opciones e imagen.",
+                        })}
+                      >
+                        Borrar
+                      </button>
+                    </article>
+                  ))}
+                </div>
+
+                <div>
+                  <h3>Mesas</h3>
+                  {restaurantTables.slice(0, 5).map((table) => (
+                    <article key={table.id} className="admin-super-list-row">
+                      <span>{table.tableName || `Mesa ${table.tableNumber}`}</span>
+                      <button
+                        type="button"
+                        className="btn-danger"
+                        onClick={() => openSuperAdminAction({
+                          kind: "entity",
+                          entityType: "restaurant_table",
+                          entityId: table.id,
+                          title: `Eliminar ${table.tableName || `Mesa ${table.tableNumber}`}`,
+                          description: "Borra la mesa. Si tiene pedidos, tambien se eliminaran con confirmacion fuerte.",
+                          confirmation: "ELIMINAR MESA",
+                        })}
+                      >
+                        Borrar
+                      </button>
+                    </article>
+                  ))}
+                </div>
+              </div>
+            </section>
+
+            <section className="admin-panel-card">
+              <div className="admin-section-heading">
+                <div>
+                  <span className="admin-kicker">Auditoria</span>
+                  <h2>Ultimas acciones</h2>
+                </div>
+              </div>
+
+              <div className="admin-audit-list">
+                {(superAdminOverview?.auditLogs.latest || []).length === 0 ? (
+                  <p className="admin-template-help">Aun no hay acciones destructivas registradas.</p>
+                ) : (
+                  (superAdminOverview?.auditLogs.latest || []).map((log) => (
+                    <article key={log.id} className="admin-audit-row">
+                      <div>
+                        <strong>{log.action}</strong>
+                        <span>{log.entityType}{log.entityId ? ` | ${log.entityId}` : ""}</span>
+                      </div>
+                      <small>{log.actorEmail || "sin email"} | {new Date(log.createdAt).toLocaleString("es-BO")}</small>
+                    </article>
+                  ))
+                )}
+              </div>
+            </section>
           </section>
         ) : null}
 
@@ -2827,6 +3290,65 @@ export default function AdminDashboard() {
               </table>
             </div>
           </section>
+        ) : null}
+
+        {superAdminConfirmAction ? (
+          <div className="admin-modal" role="dialog" aria-modal="true">
+            <div className="admin-modal-card admin-danger-modal">
+              <div className="admin-modal-head">
+                <div>
+                  <span className="admin-kicker">Confirmacion fuerte</span>
+                  <h2>{superAdminConfirmAction.title}</h2>
+                </div>
+                <button
+                  type="button"
+                  className="admin-modal-close"
+                  onClick={() => {
+                    setSuperAdminConfirmAction(null)
+                    setSuperAdminConfirmation("")
+                  }}
+                >
+                  <FaTimes />
+                </button>
+              </div>
+
+              <div className="admin-modal-form">
+                <p className="admin-danger-warning">
+                  {superAdminConfirmAction.description} Esta accion no se puede deshacer.
+                </p>
+                {superAdminConfirmAction.confirmation ? (
+                  <label>
+                    Escribe exactamente: <strong>{superAdminConfirmAction.confirmation}</strong>
+                    <input
+                      value={superAdminConfirmation}
+                      onChange={(event) => setSuperAdminConfirmation(event.target.value)}
+                      placeholder={superAdminConfirmAction.confirmation}
+                    />
+                  </label>
+                ) : null}
+                <div className="admin-inline-actions">
+                  <button
+                    type="button"
+                    className="btn-reject"
+                    onClick={() => {
+                      setSuperAdminConfirmAction(null)
+                      setSuperAdminConfirmation("")
+                    }}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-danger"
+                    onClick={executeSuperAdminAction}
+                    disabled={superAdminWorking}
+                  >
+                    {superAdminWorking ? "Ejecutando..." : "Ejecutar accion"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
         ) : null}
 
         {editorModal ? (
@@ -2998,7 +3520,9 @@ export default function AdminDashboard() {
                         <div className="admin-inline-actions">
                           <label className="admin-switch"><input type="checkbox" checked={variant.isActive} onChange={(event) => setProducts((current) => current.map((product) => product.id === editingProduct.id ? { ...product, variants: product.variants.map((item) => item.id === variant.id ? { ...item, isActive: event.target.checked } : item) } : product))} />Activa</label>
                           <button type="button" className="btn-edit" onClick={() => handleVariantSave(variant)}><FaSave />Guardar</button>
-                          <button type="button" className="btn-reject" onClick={() => handleVariantDelete(variant.id)}><FaTrash />Eliminar</button>
+                          {isSuperAdmin ? (
+                            <button type="button" className="btn-reject" onClick={() => handleVariantDelete(variant.id)}><FaTrash />Eliminar</button>
+                          ) : null}
                         </div>
                       </article>
                     ))}
@@ -3022,7 +3546,9 @@ export default function AdminDashboard() {
                           <label className="admin-switch"><input type="checkbox" checked={group.isRequired} onChange={(event) => setProducts((current) => current.map((product) => product.id === editingProduct.id ? { ...product, optionGroups: product.optionGroups.map((item) => item.id === group.id ? { ...item, isRequired: event.target.checked } : item) } : product))} />Obligatorio</label>
                           <label className="admin-switch"><input type="checkbox" checked={group.isActive} onChange={(event) => setProducts((current) => current.map((product) => product.id === editingProduct.id ? { ...product, optionGroups: product.optionGroups.map((item) => item.id === group.id ? { ...item, isActive: event.target.checked } : item) } : product))} />Activo</label>
                           <button type="button" className="btn-edit" onClick={() => handleOptionGroupSave(group)}><FaSave />Guardar grupo</button>
-                          <button type="button" className="btn-reject" onClick={() => handleOptionGroupDelete(group.id)}><FaTrash />Eliminar grupo</button>
+                          {isSuperAdmin ? (
+                            <button type="button" className="btn-reject" onClick={() => handleOptionGroupDelete(group.id)}><FaTrash />Eliminar grupo</button>
+                          ) : null}
                           <button type="button" className="btn-approve" onClick={() => handleOptionCreate(group.id)}><FaPlus />Agregar opcion</button>
                         </div>
                         {group.options.map((option) => (
@@ -3031,7 +3557,9 @@ export default function AdminDashboard() {
                             <input type="number" min="0" step="0.5" value={option.extraPrice} onChange={(event) => setProducts((current) => current.map((product) => product.id === editingProduct.id ? { ...product, optionGroups: product.optionGroups.map((item) => item.id === group.id ? { ...item, options: item.options.map((nextOption) => nextOption.id === option.id ? { ...nextOption, extraPrice: Number(event.target.value) } : nextOption) } : item) } : product))} />
                             <label className="admin-switch"><input type="checkbox" checked={option.isActive} onChange={(event) => setProducts((current) => current.map((product) => product.id === editingProduct.id ? { ...product, optionGroups: product.optionGroups.map((item) => item.id === group.id ? { ...item, options: item.options.map((nextOption) => nextOption.id === option.id ? { ...nextOption, isActive: event.target.checked } : nextOption) } : item) } : product))} />Activa</label>
                             <button type="button" className="btn-edit" onClick={() => handleOptionSave(option)}><FaSave /></button>
-                            <button type="button" className="btn-reject" onClick={() => handleOptionDelete(option.id)}><FaTrash /></button>
+                            {isSuperAdmin ? (
+                              <button type="button" className="btn-reject" onClick={() => handleOptionDelete(option.id)}><FaTrash /></button>
+                            ) : null}
                           </div>
                         ))}
                       </article>

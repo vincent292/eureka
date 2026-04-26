@@ -265,6 +265,67 @@ export interface AdminOrderReceipt {
   isDeleted: boolean
 }
 
+export interface AdminAuditLog {
+  id: string
+  actorEmail: string | null
+  action: string
+  entityType: string
+  entityId: string | null
+  metadata: Record<string, unknown>
+  createdAt: string
+}
+
+export interface SuperAdminOverview {
+  orders: {
+    total: number
+    pending: number
+    accepted: number
+    rejected: number
+  }
+  bookings: {
+    total: number
+    today: number
+    past: number
+    pending: number
+  }
+  paymentQrs: {
+    total: number
+    active: number
+    history: number
+  }
+  catalog: {
+    products: number
+    activeProducts: number
+    categories: number
+  }
+  tables: {
+    total: number
+    active: number
+  }
+  auditLogs: {
+    total: number
+    latest: AdminAuditLog[]
+  }
+}
+
+export type SuperAdminBulkAction =
+  | "delete_all_orders"
+  | "delete_rejected_orders"
+  | "delete_all_bookings"
+  | "delete_past_bookings"
+  | "reset_payment_qr"
+  | "delete_catalog"
+  | "delete_tables"
+  | "cleanup_old_receipts"
+
+export type SuperAdminEntityType =
+  | "order"
+  | "booking"
+  | "payment_qr"
+  | "product"
+  | "product_category"
+  | "restaurant_table"
+
 type AdminBookingRow = {
   id: string
   reservation_code: string
@@ -1606,6 +1667,46 @@ export async function updateLiveOrderStatus(
 export async function cleanupOldOrderReceipts() {
   const { error } = await supabase.rpc("cleanup_old_order_receipts")
   if (error) throw new Error(error.message)
+}
+
+export async function fetchSuperAdminOverview(): Promise<SuperAdminOverview> {
+  const { data, error } = await supabase.rpc("get_super_admin_overview")
+  if (error) throw new Error(error.message)
+
+  const overview = data as SuperAdminOverview | null
+  if (!overview) {
+    throw new Error("No se pudo cargar el panel Super Admin.")
+  }
+
+  return overview
+}
+
+export async function runSuperAdminBulkAction(
+  action: SuperAdminBulkAction,
+  confirmation: string,
+) {
+  const { data, error } = await supabase.rpc("super_admin_bulk_action", {
+    p_action: action,
+    p_confirmation: confirmation,
+  })
+
+  if (error) throw new Error(error.message)
+  return data as { ok: boolean; affected: number; secondary: number }
+}
+
+export async function deleteSuperAdminEntity(
+  entityType: SuperAdminEntityType,
+  entityId: string,
+  confirmation = "",
+) {
+  const { data, error } = await supabase.rpc("super_admin_delete_entity", {
+    p_entity_type: entityType,
+    p_entity_id: entityId,
+    p_confirmation: confirmation || null,
+  })
+
+  if (error) throw new Error(error.message)
+  return data as { ok: boolean; deleted: number }
 }
 
 export async function uploadAdminImage(bucket: "hero" | "novedades" | "qr" | "products", file: File) {

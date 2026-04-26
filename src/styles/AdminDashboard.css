@@ -115,6 +115,25 @@
   font-family: "Sora", sans-serif;
 }
 
+.admin-role-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  margin-top: 0.55rem;
+  padding: 0.35rem 0.7rem;
+  border-radius: 999px;
+  background: rgba(16, 33, 37, 0.08);
+  color: #58676b;
+  font-size: 0.76rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+.admin-role-badge--super {
+  background: linear-gradient(135deg, #8b2730, #c84445);
+  color: #fffdf8;
+}
+
 .admin-topbar__actions {
   display: flex;
   align-items: center;
@@ -152,6 +171,7 @@
 .btn-edit,
 .btn-approve,
 .btn-reject,
+.btn-danger,
 .btn-whatsapp {
   display: inline-flex;
   align-items: center;
@@ -872,6 +892,11 @@
   color: #8b2730;
 }
 
+.btn-danger {
+  background: linear-gradient(135deg, #8b2730, #c84445);
+  color: #fffdf8;
+}
+
 .status-pill--expired,
 .status-pill--cancelled {
   background: rgba(16, 33, 37, 0.08);
@@ -1322,6 +1347,102 @@
   grid-template-columns: 1fr;
 }
 
+.admin-super-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 1rem;
+}
+
+.admin-super-card {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.admin-super-card strong {
+  color: #102125;
+  font-family: "Sora", sans-serif;
+  font-size: 2.15rem;
+}
+
+.admin-super-card p {
+  margin: 0;
+  color: #58676b;
+  font-weight: 800;
+}
+
+.admin-danger-zone {
+  border-color: rgba(200, 68, 69, 0.24);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(255, 241, 241, 0.92)),
+    #ffffff;
+}
+
+.admin-danger-grid,
+.admin-super-lists,
+.admin-audit-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.admin-danger-grid,
+.admin-super-lists {
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.admin-danger-card,
+.admin-super-list-row,
+.admin-audit-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.85rem;
+  padding: 0.85rem;
+  border: 1px solid rgba(16, 33, 37, 0.08);
+  border-radius: 18px;
+  background: #ffffff;
+}
+
+.admin-danger-card {
+  align-items: flex-start;
+}
+
+.admin-danger-card strong,
+.admin-super-lists h3,
+.admin-audit-row strong {
+  color: #102125;
+  font-family: "Sora", sans-serif;
+}
+
+.admin-danger-card p,
+.admin-danger-card small,
+.admin-audit-row span,
+.admin-audit-row small,
+.admin-super-list-row span {
+  color: #58676b;
+  line-height: 1.45;
+}
+
+.admin-danger-card p {
+  margin: 0.35rem 0;
+}
+
+.admin-super-lists h3 {
+  margin: 0 0 0.55rem;
+}
+
+.admin-danger-warning {
+  margin: 0;
+  padding: 0.9rem 1rem;
+  border-radius: 16px;
+  background: rgba(200, 68, 69, 0.14);
+  color: #8b2730;
+  font-weight: 900;
+}
+
+.admin-modal-card.admin-danger-modal {
+  border-color: rgba(200, 68, 69, 0.28);
+}
+
 .admin-modal {
   position: fixed;
   inset: 0;
@@ -1523,8 +1644,18 @@
   .admin-product-editor__top,
   .admin-option-row,
   .admin-table-card,
-  .admin-table-modal-preview {
+  .admin-table-modal-preview,
+  .admin-super-grid,
+  .admin-danger-grid,
+  .admin-super-lists {
     grid-template-columns: 1fr;
+  }
+
+  .admin-danger-card,
+  .admin-super-list-row,
+  .admin-audit-row {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .admin-reservation-grid--list .admin-reservation-card {
