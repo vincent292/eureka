@@ -348,7 +348,7 @@ export default function TableMenu() {
         onClick={() => setMobileCartOpen(true)}
         aria-label="Ver pedido"
       >
-        <span><FaShoppingCart /> {cartItemCount}</span>
+        <span><FaShoppingCart /> Pedido ({cartItemCount})</span>
         <strong>{formatMoney(cartTotal)}</strong>
       </button>
 
@@ -380,7 +380,7 @@ export default function TableMenu() {
                     <strong>{product.name}</strong>
                     <p>{product.description || "Listo para pedir en mesa."}</p>
                     <button type="button" onClick={() => setSelectedProduct(product)}>
-                      Agregar desde {formatMoney(price)}
+                      Agregar {formatMoney(price)}
                     </button>
                   </div>
                 </article>
