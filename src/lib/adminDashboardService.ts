@@ -92,7 +92,13 @@ export interface AdminPaymentQr {
   imagePath: string
   instructions: string | null
   isActive: boolean
+  expiresAt: string | null
   updatedAt: string
+}
+
+export type ProtectedPaymentQrInput = Omit<AdminPaymentQr, "id" | "updatedAt"> & {
+  id: string | null
+  updatedAt?: string
 }
 
 export interface AdminPaymentQrHistory {
@@ -100,6 +106,7 @@ export interface AdminPaymentQrHistory {
   label: string
   imagePath: string
   instructions: string | null
+  expiresAt: string | null
   changedAt: string
 }
 
@@ -124,6 +131,138 @@ export interface AdminDiscountToken {
   expiresAt: string | null
   isActive: boolean
   createdAt: string
+}
+
+export interface AdminProductCategory {
+  id: string
+  name: string
+  slug: string
+  description: string | null
+  imagePath: string | null
+  sortOrder: number
+  isActive: boolean
+  createdAt: string
+}
+
+export interface AdminProduct {
+  id: string
+  categoryId: string
+  name: string
+  slug: string
+  description: string | null
+  basePrice: number
+  imagePath: string | null
+  productType: "simple" | "combo"
+  isActive: boolean
+  isFeatured: boolean
+  sortOrder: number
+  createdAt: string
+  variants: AdminProductVariant[]
+  optionGroups: AdminProductOptionGroup[]
+}
+
+export interface AdminProductVariant {
+  id: string
+  productId: string
+  name: string
+  description: string | null
+  price: number
+  sortOrder: number
+  isActive: boolean
+}
+
+export interface AdminProductOptionGroup {
+  id: string
+  productId: string
+  name: string
+  isRequired: boolean
+  selectionType: "single" | "multiple"
+  minSelect: number
+  maxSelect: number
+  sortOrder: number
+  isActive: boolean
+  options: AdminProductOption[]
+}
+
+export interface AdminProductOption {
+  id: string
+  optionGroupId: string
+  name: string
+  extraPrice: number
+  sortOrder: number
+  isActive: boolean
+}
+
+export interface AdminRestaurantTable {
+  id: string
+  tableNumber: number
+  tableName: string | null
+  tableCode: string
+  qrUrl: string | null
+  qrImagePath: string | null
+  isActive: boolean
+  createdAt: string
+}
+
+export type AdminOrderStatus =
+  | "new"
+  | "pending_review"
+  | "accepted"
+  | "preparing"
+  | "ready"
+  | "delivered"
+  | "rejected"
+  | "cancelled"
+
+export type AdminPaymentStatus = "pending" | "paid" | "rejected" | "cash_pending"
+
+export interface AdminLiveOrder {
+  id: string
+  orderCode: string
+  tableId: string
+  tableNumber: number | null
+  tableName: string | null
+  customerName: string
+  customerPhone: string
+  paymentMethod: "qr" | "cash"
+  paymentStatus: AdminPaymentStatus
+  orderStatus: AdminOrderStatus
+  subtotal: number
+  total: number
+  rejectionReason: string | null
+  acceptedAt: string | null
+  rejectedAt: string | null
+  preparedAt: string | null
+  deliveredAt: string | null
+  createdAt: string
+  items: AdminLiveOrderItem[]
+  receipts: AdminOrderReceipt[]
+}
+
+export interface AdminLiveOrderItem {
+  id: string
+  productName: string
+  variantName: string | null
+  quantity: number
+  unitPrice: number
+  notes: string | null
+  totalPrice: number
+  options: AdminLiveOrderItemOption[]
+}
+
+export interface AdminLiveOrderItemOption {
+  id: string
+  groupName: string
+  optionName: string
+  extraPrice: number
+}
+
+export interface AdminOrderReceipt {
+  id: string
+  imagePath: string
+  createdAt: string
+  expiresAt: string
+  isDeleted: boolean
 }
 
 type AdminBookingRow = {
@@ -202,6 +341,7 @@ type AdminPaymentQrRow = {
   image_path: string
   instructions: string | null
   is_active: boolean
+  expires_at: string | null
   updated_at: string
 }
 
@@ -210,6 +350,7 @@ type AdminPaymentQrHistoryRow = {
   label: string
   image_path: string
   instructions: string | null
+  expires_at: string | null
   changed_at: string
 }
 
@@ -236,6 +377,122 @@ type AdminDiscountTokenRow = {
   created_at: string
 }
 
+type AdminProductCategoryRow = {
+  id: string
+  name: string
+  slug: string
+  description: string | null
+  image_path: string | null
+  sort_order: number
+  is_active: boolean
+  created_at: string
+}
+
+type AdminProductRow = {
+  id: string
+  category_id: string
+  name: string
+  slug: string
+  description: string | null
+  base_price: number
+  image_path: string | null
+  product_type: "simple" | "combo"
+  is_active: boolean
+  is_featured: boolean
+  sort_order: number
+  created_at: string
+}
+
+type AdminProductVariantRow = {
+  id: string
+  product_id: string
+  name: string
+  description: string | null
+  price: number
+  sort_order: number
+  is_active: boolean
+}
+
+type AdminProductOptionGroupRow = {
+  id: string
+  product_id: string
+  name: string
+  is_required: boolean
+  selection_type: "single" | "multiple"
+  min_select: number
+  max_select: number
+  sort_order: number
+  is_active: boolean
+}
+
+type AdminProductOptionRow = {
+  id: string
+  option_group_id: string
+  name: string
+  extra_price: number
+  sort_order: number
+  is_active: boolean
+}
+
+type AdminRestaurantTableRow = {
+  id: string
+  table_number: number
+  table_name: string | null
+  table_code: string
+  qr_url: string | null
+  qr_image_path: string | null
+  is_active: boolean
+  created_at: string
+}
+
+type AdminOrderRow = {
+  id: string
+  order_code: string
+  table_id: string
+  customer_name: string
+  customer_phone: string
+  payment_method: "qr" | "cash"
+  payment_status: AdminPaymentStatus
+  order_status: AdminOrderStatus
+  subtotal: number
+  total: number
+  rejection_reason: string | null
+  accepted_at: string | null
+  rejected_at: string | null
+  prepared_at: string | null
+  delivered_at: string | null
+  created_at: string
+  restaurant_tables?: { table_number: number; table_name: string | null } | { table_number: number; table_name: string | null }[] | null
+}
+
+type AdminOrderItemRow = {
+  id: string
+  order_id: string
+  product_name_snapshot: string
+  variant_name_snapshot: string | null
+  quantity: number
+  unit_price: number
+  notes: string | null
+  total_price: number
+}
+
+type AdminOrderItemOptionRow = {
+  id: string
+  order_item_id: string
+  option_group_name_snapshot: string
+  option_name_snapshot: string
+  extra_price: number
+}
+
+type AdminOrderReceiptRow = {
+  id: string
+  order_id: string
+  image_path: string
+  created_at: string
+  expires_at: string
+  is_deleted: boolean
+}
+
 const toStoragePath = (path: string, bucket: string) => {
   const marker = `/storage/v1/object/public/${bucket}/`
   const markerIndex = path.indexOf(marker)
@@ -259,6 +516,15 @@ const newId = () =>
 
 const firstRelation = <T>(value: T | T[] | null | undefined) =>
   Array.isArray(value) ? value[0] : value
+
+const slugify = (value: string) =>
+  value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    || newId().slice(0, 8)
 
 export async function fetchAdminBookings(date?: string) {
   let query = supabase
@@ -652,7 +918,7 @@ export async function fetchAdminPricingRules() {
 export async function fetchAdminPaymentQrs() {
   const { data, error } = await supabase
     .from("payment_qrs")
-    .select("id, label, image_path, instructions, is_active, updated_at")
+    .select("id, label, image_path, instructions, is_active, expires_at, updated_at")
     .order("updated_at", { ascending: false })
 
   if (error) throw new Error(error.message)
@@ -663,6 +929,7 @@ export async function fetchAdminPaymentQrs() {
     imagePath: resolveMediaPath(qr.image_path, "qr"),
     instructions: qr.instructions,
     isActive: qr.is_active,
+    expiresAt: qr.expires_at,
     updatedAt: qr.updated_at,
   }))
 }
@@ -670,7 +937,7 @@ export async function fetchAdminPaymentQrs() {
 export async function fetchAdminPaymentQrHistory() {
   const { data, error } = await supabase
     .from("payment_qr_history")
-    .select("id, label, image_path, instructions, changed_at")
+    .select("id, label, image_path, instructions, expires_at, changed_at")
     .order("changed_at", { ascending: false })
     .limit(12)
 
@@ -681,12 +948,13 @@ export async function fetchAdminPaymentQrHistory() {
     label: qr.label,
     imagePath: resolveMediaPath(qr.image_path, "qr"),
     instructions: qr.instructions,
+    expiresAt: qr.expires_at,
     changedAt: qr.changed_at,
   }))
 }
 
 export async function updatePaymentQrProtected(
-  qr: AdminPaymentQr,
+  qr: ProtectedPaymentQrInput,
   secret: string,
 ) {
   const { error } = await supabase.rpc("update_payment_qr_protected", {
@@ -695,6 +963,7 @@ export async function updatePaymentQrProtected(
     p_image_path: toStoragePath(qr.imagePath, "qr"),
     p_instructions: qr.instructions || "",
     p_is_active: qr.isActive,
+    p_expires_at: qr.expiresAt || null,
     p_secret: secret,
   })
 
@@ -835,9 +1104,515 @@ export async function deleteDiscountToken(id: string) {
   if (error) throw new Error(error.message)
 }
 
-export async function uploadAdminImage(bucket: "hero" | "novedades" | "qr", file: File) {
-  if (!file.type.startsWith("image/")) {
-    throw new Error("Solo se admiten imagenes.")
+export async function fetchAdminProductCategories() {
+  const { data, error } = await supabase
+    .from("product_categories")
+    .select("id, name, slug, description, image_path, sort_order, is_active, created_at")
+    .order("sort_order", { ascending: true })
+    .order("created_at", { ascending: true })
+
+  if (error) throw new Error(error.message)
+
+  return ((data || []) as AdminProductCategoryRow[]).map((category) => ({
+    id: category.id,
+    name: category.name,
+    slug: category.slug,
+    description: category.description,
+    imagePath: category.image_path ? resolveMediaPath(category.image_path, "products") : null,
+    sortOrder: category.sort_order,
+    isActive: category.is_active,
+    createdAt: category.created_at,
+  }))
+}
+
+export async function fetchAdminProducts() {
+  const [productsResult, variantsResult, groupsResult, optionsResult] = await Promise.all([
+    supabase
+      .from("products")
+      .select("id, category_id, name, slug, description, base_price, image_path, product_type, is_active, is_featured, sort_order, created_at")
+      .order("sort_order", { ascending: true })
+      .order("created_at", { ascending: true }),
+    supabase
+      .from("product_variants")
+      .select("id, product_id, name, description, price, sort_order, is_active")
+      .order("sort_order", { ascending: true }),
+    supabase
+      .from("product_option_groups")
+      .select("id, product_id, name, is_required, selection_type, min_select, max_select, sort_order, is_active")
+      .order("sort_order", { ascending: true }),
+    supabase
+      .from("product_options")
+      .select("id, option_group_id, name, extra_price, sort_order, is_active")
+      .order("sort_order", { ascending: true }),
+  ])
+
+  if (productsResult.error) throw new Error(productsResult.error.message)
+  if (variantsResult.error) throw new Error(variantsResult.error.message)
+  if (groupsResult.error) throw new Error(groupsResult.error.message)
+  if (optionsResult.error) throw new Error(optionsResult.error.message)
+
+  const optionsByGroup = new Map<string, AdminProductOption[]>()
+  ;((optionsResult.data || []) as AdminProductOptionRow[]).forEach((option) => {
+    const nextOption = {
+      id: option.id,
+      optionGroupId: option.option_group_id,
+      name: option.name,
+      extraPrice: Number(option.extra_price),
+      sortOrder: option.sort_order,
+      isActive: option.is_active,
+    }
+    optionsByGroup.set(option.option_group_id, [
+      ...(optionsByGroup.get(option.option_group_id) || []),
+      nextOption,
+    ])
+  })
+
+  const groupsByProduct = new Map<string, AdminProductOptionGroup[]>()
+  ;((groupsResult.data || []) as AdminProductOptionGroupRow[]).forEach((group) => {
+    const nextGroup = {
+      id: group.id,
+      productId: group.product_id,
+      name: group.name,
+      isRequired: group.is_required,
+      selectionType: group.selection_type,
+      minSelect: group.min_select,
+      maxSelect: group.max_select,
+      sortOrder: group.sort_order,
+      isActive: group.is_active,
+      options: optionsByGroup.get(group.id) || [],
+    }
+    groupsByProduct.set(group.product_id, [
+      ...(groupsByProduct.get(group.product_id) || []),
+      nextGroup,
+    ])
+  })
+
+  const variantsByProduct = new Map<string, AdminProductVariant[]>()
+  ;((variantsResult.data || []) as AdminProductVariantRow[]).forEach((variant) => {
+    const nextVariant = {
+      id: variant.id,
+      productId: variant.product_id,
+      name: variant.name,
+      description: variant.description,
+      price: Number(variant.price),
+      sortOrder: variant.sort_order,
+      isActive: variant.is_active,
+    }
+    variantsByProduct.set(variant.product_id, [
+      ...(variantsByProduct.get(variant.product_id) || []),
+      nextVariant,
+    ])
+  })
+
+  return ((productsResult.data || []) as AdminProductRow[]).map((product) => ({
+    id: product.id,
+    categoryId: product.category_id,
+    name: product.name,
+    slug: product.slug,
+    description: product.description,
+    basePrice: Number(product.base_price),
+    imagePath: product.image_path ? resolveMediaPath(product.image_path, "products") : null,
+    productType: product.product_type,
+    isActive: product.is_active,
+    isFeatured: product.is_featured,
+    sortOrder: product.sort_order,
+    createdAt: product.created_at,
+    variants: variantsByProduct.get(product.id) || [],
+    optionGroups: groupsByProduct.get(product.id) || [],
+  }))
+}
+
+export async function createProductCategory(input?: Partial<AdminProductCategory>) {
+  const name = input?.name?.trim() || "Nueva categoria"
+  const { error } = await supabase.from("product_categories").insert({
+    name,
+    slug: slugify(input?.slug || name),
+    description: input?.description || null,
+    image_path: input?.imagePath ? toStoragePath(input.imagePath, "products") : null,
+    sort_order: input?.sortOrder ?? 0,
+    is_active: input?.isActive ?? true,
+  })
+
+  if (error) throw new Error(error.message)
+}
+
+export async function updateProductCategory(
+  id: string,
+  patch: Partial<AdminProductCategory>,
+) {
+  const payload: Record<string, string | number | boolean | null> = {}
+  if ("name" in patch && patch.name !== undefined) {
+    payload.name = patch.name
+    payload.slug = slugify(patch.slug || patch.name)
+  }
+  if ("slug" in patch && patch.slug !== undefined) payload.slug = slugify(patch.slug)
+  if ("description" in patch) payload.description = patch.description || null
+  if ("imagePath" in patch) {
+    payload.image_path = patch.imagePath ? toStoragePath(patch.imagePath, "products") : null
+  }
+  if ("sortOrder" in patch && patch.sortOrder !== undefined) payload.sort_order = patch.sortOrder
+  if ("isActive" in patch && patch.isActive !== undefined) payload.is_active = patch.isActive
+
+  const { error } = await supabase.from("product_categories").update(payload).eq("id", id)
+  if (error) throw new Error(error.message)
+}
+
+export async function deleteProductCategory(id: string) {
+  const { count, error: countError } = await supabase
+    .from("products")
+    .select("id", { count: "exact", head: true })
+    .eq("category_id", id)
+
+  if (countError) throw new Error(countError.message)
+  if ((count || 0) > 0) {
+    throw new Error("No se puede eliminar una categoria con productos. Desactivala o mueve sus productos primero.")
+  }
+
+  const { error } = await supabase.from("product_categories").delete().eq("id", id)
+  if (error) throw new Error(error.message)
+}
+
+export async function createProduct(categoryId: string, input?: Partial<AdminProduct>) {
+  const name = input?.name?.trim() || "Nuevo producto"
+  const { error } = await supabase.from("products").insert({
+    category_id: categoryId,
+    name,
+    slug: slugify(input?.slug || name),
+    description: input?.description || null,
+    base_price: input?.basePrice ?? 0,
+    image_path: input?.imagePath ? toStoragePath(input.imagePath, "products") : null,
+    product_type: input?.productType || "simple",
+    is_active: input?.isActive ?? true,
+    is_featured: input?.isFeatured ?? false,
+    sort_order: input?.sortOrder ?? 0,
+  })
+
+  if (error) throw new Error(error.message)
+}
+
+export async function updateProduct(id: string, patch: Partial<AdminProduct>) {
+  const payload: Record<string, string | number | boolean | null> = {}
+  if ("categoryId" in patch && patch.categoryId !== undefined) payload.category_id = patch.categoryId
+  if ("name" in patch && patch.name !== undefined) {
+    payload.name = patch.name
+    payload.slug = slugify(patch.slug || patch.name)
+  }
+  if ("slug" in patch && patch.slug !== undefined) payload.slug = slugify(patch.slug)
+  if ("description" in patch) payload.description = patch.description || null
+  if ("basePrice" in patch && patch.basePrice !== undefined) payload.base_price = patch.basePrice
+  if ("imagePath" in patch) {
+    payload.image_path = patch.imagePath ? toStoragePath(patch.imagePath, "products") : null
+  }
+  if ("productType" in patch && patch.productType !== undefined) payload.product_type = patch.productType
+  if ("isActive" in patch && patch.isActive !== undefined) payload.is_active = patch.isActive
+  if ("isFeatured" in patch && patch.isFeatured !== undefined) payload.is_featured = patch.isFeatured
+  if ("sortOrder" in patch && patch.sortOrder !== undefined) payload.sort_order = patch.sortOrder
+
+  const { error } = await supabase.from("products").update(payload).eq("id", id)
+  if (error) throw new Error(error.message)
+}
+
+export async function deleteProduct(id: string) {
+  const { error } = await supabase.from("products").delete().eq("id", id)
+  if (error) throw new Error(error.message)
+}
+
+export async function createProductVariant(productId: string) {
+  const { error } = await supabase.from("product_variants").insert({
+    product_id: productId,
+    name: "Nueva variante",
+    price: 0,
+    sort_order: 0,
+    is_active: true,
+  })
+  if (error) throw new Error(error.message)
+}
+
+export async function updateProductVariant(id: string, patch: Partial<AdminProductVariant>) {
+  const payload: Record<string, string | number | boolean | null> = {}
+  if ("name" in patch && patch.name !== undefined) payload.name = patch.name
+  if ("description" in patch) payload.description = patch.description || null
+  if ("price" in patch && patch.price !== undefined) payload.price = patch.price
+  if ("sortOrder" in patch && patch.sortOrder !== undefined) payload.sort_order = patch.sortOrder
+  if ("isActive" in patch && patch.isActive !== undefined) payload.is_active = patch.isActive
+
+  const { error } = await supabase.from("product_variants").update(payload).eq("id", id)
+  if (error) throw new Error(error.message)
+}
+
+export async function deleteProductVariant(id: string) {
+  const { error } = await supabase.from("product_variants").delete().eq("id", id)
+  if (error) throw new Error(error.message)
+}
+
+export async function createProductOptionGroup(productId: string) {
+  const { error } = await supabase.from("product_option_groups").insert({
+    product_id: productId,
+    name: "Nuevo grupo",
+    selection_type: "single",
+    min_select: 0,
+    max_select: 1,
+    sort_order: 0,
+    is_active: true,
+  })
+  if (error) throw new Error(error.message)
+}
+
+export async function updateProductOptionGroup(
+  id: string,
+  patch: Partial<AdminProductOptionGroup>,
+) {
+  const payload: Record<string, string | number | boolean> = {}
+  if ("name" in patch && patch.name !== undefined) payload.name = patch.name
+  if ("isRequired" in patch && patch.isRequired !== undefined) payload.is_required = patch.isRequired
+  if ("selectionType" in patch && patch.selectionType !== undefined) payload.selection_type = patch.selectionType
+  if ("minSelect" in patch && patch.minSelect !== undefined) payload.min_select = patch.minSelect
+  if ("maxSelect" in patch && patch.maxSelect !== undefined) payload.max_select = patch.maxSelect
+  if ("sortOrder" in patch && patch.sortOrder !== undefined) payload.sort_order = patch.sortOrder
+  if ("isActive" in patch && patch.isActive !== undefined) payload.is_active = patch.isActive
+
+  const { error } = await supabase.from("product_option_groups").update(payload).eq("id", id)
+  if (error) throw new Error(error.message)
+}
+
+export async function deleteProductOptionGroup(id: string) {
+  const { error } = await supabase.from("product_option_groups").delete().eq("id", id)
+  if (error) throw new Error(error.message)
+}
+
+export async function createProductOption(optionGroupId: string) {
+  const { error } = await supabase.from("product_options").insert({
+    option_group_id: optionGroupId,
+    name: "Nueva opcion",
+    extra_price: 0,
+    sort_order: 0,
+    is_active: true,
+  })
+  if (error) throw new Error(error.message)
+}
+
+export async function updateProductOption(id: string, patch: Partial<AdminProductOption>) {
+  const payload: Record<string, string | number | boolean> = {}
+  if ("name" in patch && patch.name !== undefined) payload.name = patch.name
+  if ("extraPrice" in patch && patch.extraPrice !== undefined) payload.extra_price = patch.extraPrice
+  if ("sortOrder" in patch && patch.sortOrder !== undefined) payload.sort_order = patch.sortOrder
+  if ("isActive" in patch && patch.isActive !== undefined) payload.is_active = patch.isActive
+
+  const { error } = await supabase.from("product_options").update(payload).eq("id", id)
+  if (error) throw new Error(error.message)
+}
+
+export async function deleteProductOption(id: string) {
+  const { error } = await supabase.from("product_options").delete().eq("id", id)
+  if (error) throw new Error(error.message)
+}
+
+export async function fetchAdminRestaurantTables() {
+  const { data, error } = await supabase
+    .from("restaurant_tables")
+    .select("id, table_number, table_name, table_code, qr_url, qr_image_path, is_active, created_at")
+    .order("table_number", { ascending: true })
+
+  if (error) throw new Error(error.message)
+
+  return ((data || []) as AdminRestaurantTableRow[]).map((table) => ({
+    id: table.id,
+    tableNumber: table.table_number,
+    tableName: table.table_name,
+    tableCode: table.table_code,
+    qrUrl: table.qr_url,
+    qrImagePath: table.qr_image_path,
+    isActive: table.is_active,
+    createdAt: table.created_at,
+  }))
+}
+
+const makeTableCode = (tableNumber: number) =>
+  `mesa-${tableNumber}-${newId().slice(0, 6).toLowerCase()}`
+
+export async function createRestaurantTable(nextNumber?: number) {
+  const tableNumber = nextNumber || 1
+  const tableCode = makeTableCode(tableNumber)
+  const { error } = await supabase.from("restaurant_tables").insert({
+    table_number: tableNumber,
+    table_name: `Mesa ${tableNumber}`,
+    table_code: tableCode,
+    qr_url: `/menu/mesa/${tableCode}`,
+    is_active: true,
+  })
+
+  if (error) throw new Error(error.message)
+}
+
+export async function updateRestaurantTable(id: string, patch: Partial<AdminRestaurantTable>) {
+  const payload: Record<string, string | number | boolean | null> = {}
+  if ("tableNumber" in patch && patch.tableNumber !== undefined) payload.table_number = patch.tableNumber
+  if ("tableName" in patch) payload.table_name = patch.tableName || null
+  if ("tableCode" in patch && patch.tableCode !== undefined) {
+    payload.table_code = patch.tableCode
+    payload.qr_url = `/menu/mesa/${patch.tableCode}`
+  }
+  if ("qrUrl" in patch) payload.qr_url = patch.qrUrl || null
+  if ("qrImagePath" in patch) payload.qr_image_path = patch.qrImagePath || null
+  if ("isActive" in patch && patch.isActive !== undefined) payload.is_active = patch.isActive
+
+  const { error } = await supabase.from("restaurant_tables").update(payload).eq("id", id)
+  if (error) throw new Error(error.message)
+}
+
+export async function deleteRestaurantTable(id: string) {
+  const { count, error: countError } = await supabase
+    .from("orders")
+    .select("id", { count: "exact", head: true })
+    .eq("table_id", id)
+
+  if (countError) throw new Error(countError.message)
+  if ((count || 0) > 0) {
+    const { error } = await supabase.from("restaurant_tables").update({ is_active: false }).eq("id", id)
+    if (error) throw new Error(error.message)
+    return
+  }
+
+  const { error } = await supabase.from("restaurant_tables").delete().eq("id", id)
+  if (error) throw new Error(error.message)
+}
+
+export async function fetchAdminLiveOrders() {
+  const ordersResult = await supabase
+    .from("orders")
+    .select("id, order_code, table_id, customer_name, customer_phone, payment_method, payment_status, order_status, subtotal, total, rejection_reason, accepted_at, rejected_at, prepared_at, delivered_at, created_at, restaurant_tables(table_number, table_name)")
+    .order("created_at", { ascending: false })
+    .limit(80)
+
+  if (ordersResult.error) throw new Error(ordersResult.error.message)
+
+  const orders = (ordersResult.data || []) as unknown as AdminOrderRow[]
+  const orderIds = orders.map((order) => order.id)
+  if (orderIds.length === 0) return []
+
+  const [itemsResult, receiptsResult] = await Promise.all([
+    supabase
+      .from("order_items")
+      .select("id, order_id, product_name_snapshot, variant_name_snapshot, quantity, unit_price, notes, total_price")
+      .in("order_id", orderIds),
+    supabase
+      .from("payment_receipts")
+      .select("id, order_id, image_path, created_at, expires_at, is_deleted")
+      .in("order_id", orderIds)
+      .order("created_at", { ascending: false }),
+  ])
+
+  if (itemsResult.error) throw new Error(itemsResult.error.message)
+  if (receiptsResult.error) throw new Error(receiptsResult.error.message)
+
+  const items = (itemsResult.data || []) as AdminOrderItemRow[]
+  const itemIds = items.map((item) => item.id)
+  const optionsResult = itemIds.length > 0
+    ? await supabase
+        .from("order_item_options")
+        .select("id, order_item_id, option_group_name_snapshot, option_name_snapshot, extra_price")
+        .in("order_item_id", itemIds)
+    : { data: [], error: null }
+
+  if (optionsResult.error) throw new Error(optionsResult.error.message)
+
+  const optionsByItem = new Map<string, AdminLiveOrderItemOption[]>()
+  ;((optionsResult.data || []) as AdminOrderItemOptionRow[]).forEach((option) => {
+    optionsByItem.set(option.order_item_id, [
+      ...(optionsByItem.get(option.order_item_id) || []),
+      {
+        id: option.id,
+        groupName: option.option_group_name_snapshot,
+        optionName: option.option_name_snapshot,
+        extraPrice: Number(option.extra_price),
+      },
+    ])
+  })
+
+  const itemsByOrder = new Map<string, AdminLiveOrderItem[]>()
+  items.forEach((item) => {
+    itemsByOrder.set(item.order_id, [
+      ...(itemsByOrder.get(item.order_id) || []),
+      {
+        id: item.id,
+        productName: item.product_name_snapshot,
+        variantName: item.variant_name_snapshot,
+        quantity: item.quantity,
+        unitPrice: Number(item.unit_price),
+        notes: item.notes,
+        totalPrice: Number(item.total_price),
+        options: optionsByItem.get(item.id) || [],
+      },
+    ])
+  })
+
+  const receiptsByOrder = new Map<string, AdminOrderReceipt[]>()
+  ;((receiptsResult.data || []) as AdminOrderReceiptRow[]).forEach((receipt) => {
+    receiptsByOrder.set(receipt.order_id, [
+      ...(receiptsByOrder.get(receipt.order_id) || []),
+      {
+        id: receipt.id,
+        imagePath: resolveMediaPath(receipt.image_path, "receipts"),
+        createdAt: receipt.created_at,
+        expiresAt: receipt.expires_at,
+        isDeleted: receipt.is_deleted,
+      },
+    ])
+  })
+
+  return orders.map((order) => {
+    const table = firstRelation(order.restaurant_tables)
+    return {
+      id: order.id,
+      orderCode: order.order_code,
+      tableId: order.table_id,
+      tableNumber: table?.table_number || null,
+      tableName: table?.table_name || null,
+      customerName: order.customer_name,
+      customerPhone: order.customer_phone,
+      paymentMethod: order.payment_method,
+      paymentStatus: order.payment_status,
+      orderStatus: order.order_status,
+      subtotal: Number(order.subtotal),
+      total: Number(order.total),
+      rejectionReason: order.rejection_reason,
+      acceptedAt: order.accepted_at,
+      rejectedAt: order.rejected_at,
+      preparedAt: order.prepared_at,
+      deliveredAt: order.delivered_at,
+      createdAt: order.created_at,
+      items: itemsByOrder.get(order.id) || [],
+      receipts: receiptsByOrder.get(order.id) || [],
+    } satisfies AdminLiveOrder
+  })
+}
+
+export async function updateLiveOrderStatus(
+  orderId: string,
+  orderStatus: AdminOrderStatus,
+  paymentStatus?: AdminPaymentStatus | null,
+  rejectionReason?: string,
+) {
+  const { error } = await supabase.rpc("update_order_status", {
+    p_order_id: orderId,
+    p_order_status: orderStatus,
+    p_payment_status: paymentStatus || null,
+    p_rejection_reason: rejectionReason || null,
+  })
+
+  if (error) throw new Error(error.message)
+}
+
+export async function cleanupOldOrderReceipts() {
+  const { error } = await supabase.rpc("cleanup_old_order_receipts")
+  if (error) throw new Error(error.message)
+}
+
+export async function uploadAdminImage(bucket: "hero" | "novedades" | "qr" | "products", file: File) {
+  const allowedImageTypes = ["image/png", "image/jpeg", "image/webp"]
+
+  if (!allowedImageTypes.includes(file.type)) {
+    throw new Error("Solo se admiten imagenes PNG, JPG, JPEG o WEBP.")
   }
 
   if (file.size > 5 * 1024 * 1024) {
@@ -845,7 +1620,9 @@ export async function uploadAdminImage(bucket: "hero" | "novedades" | "qr", file
   }
 
   const extension = file.name.split(".").pop()?.toLowerCase() || "webp"
-  const path = `admin/${Date.now()}-${newId()}.${extension}`
+  const pathPrefix =
+    bucket === "qr" ? "upload/QR" : bucket === "products" ? "uploads/products" : "admin"
+  const path = `${pathPrefix}/${Date.now()}-${newId()}.${extension}`
   const { error } = await supabase.storage.from(bucket).upload(path, file, {
     cacheControl: "3600",
     upsert: false,

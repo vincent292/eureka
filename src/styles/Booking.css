@@ -442,6 +442,32 @@
   background: rgba(232, 239, 132, 0.18);
 }
 
+.booking-qr-expiry {
+  font-weight: 900;
+}
+
+.booking-warning--danger {
+  background: rgba(200, 68, 69, 0.16);
+  color: #8b2730;
+  font-weight: 900;
+}
+
+.booking-warning--loading {
+  position: relative;
+  overflow: hidden;
+  min-height: 54px;
+  font-weight: 900;
+}
+
+.booking-warning--loading::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.48), transparent);
+  animation: booking-qr-loading 1.1s ease-in-out infinite;
+}
+
 .booking-submit {
   display: inline-flex;
   align-items: center;
@@ -628,6 +654,12 @@
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes booking-qr-loading {
+  to {
+    transform: translateX(100%);
   }
 }
 

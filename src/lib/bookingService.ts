@@ -8,6 +8,7 @@ export interface PaymentQr {
   label: string
   imagePath: string
   instructions: string | null
+  expiresAt: string | null
 }
 
 export interface BookingDurationPrice {
@@ -69,6 +70,7 @@ type PaymentQrRow = {
   label: string
   image_path: string
   instructions: string | null
+  expires_at: string | null
 }
 
 type BookingDurationPriceRow = {
@@ -170,7 +172,7 @@ export async function fetchBookingDurationPrices(): Promise<BookingDurationPrice
 export async function fetchActivePaymentQrs(): Promise<PaymentQr[]> {
   const { data, error } = await supabase
     .from("payment_qrs")
-    .select("id, label, image_path, instructions")
+    .select("id, label, image_path, instructions, expires_at")
     .eq("is_active", true)
     .order("created_at", { ascending: true })
 
@@ -184,6 +186,7 @@ export async function fetchActivePaymentQrs(): Promise<PaymentQr[]> {
     label: qr.label,
     imagePath: resolveMediaPath(qr.image_path, "qr"),
     instructions: qr.instructions,
+    expiresAt: qr.expires_at,
   }))
 }
 

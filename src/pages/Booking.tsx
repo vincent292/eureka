@@ -16,6 +16,7 @@ import "../styles/Booking.css"
 
 const today = new Date().toISOString().slice(0, 10)
 const storageKey = "eureka_booking_draft"
+const paymentQrCacheKey = "eureka_active_payment_qrs"
 const fallbackDurations: BookingDurationPrice[] = [
   { id: "duration-60-1", label: "1 hora / 1 persona", durationMinutes: 60, personCount: 1, price: 30 },
   { id: "duration-60-2", label: "1 hora / 2 personas", durationMinutes: 60, personCount: 2, price: 50 },
@@ -60,12 +61,30 @@ const readDraft = () => {
   }
 }
 
+const readCachedPaymentQrs = () => {
+  try {
+    const cached = JSON.parse(localStorage.getItem(paymentQrCacheKey) || "[]") as PaymentQr[]
+    return Array.isArray(cached) ? cached : []
+  } catch {
+    return []
+  }
+}
+
+const formatQrExpiryDate = (value: string) =>
+  new Date(value).toLocaleDateString("es-BO", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  })
+
 export default function Booking() {
+  const cachedPaymentQrs = readCachedPaymentQrs()
   const [step, setStep] = useState(1)
   const [draft, setDraft] = useState<BookingDraft>(readDraft)
   const [durationPrices, setDurationPrices] = useState(fallbackDurations)
-  const [paymentQrs, setPaymentQrs] = useState<PaymentQr[]>([])
-  const [selectedQrId, setSelectedQrId] = useState<string | null>(null)
+  const [paymentQrs, setPaymentQrs] = useState<PaymentQr[]>(cachedPaymentQrs)
+  const [selectedQrId, setSelectedQrId] = useState<string | null>(cachedPaymentQrs[0]?.id || null)
+  const [qrLoading, setQrLoading] = useState(cachedPaymentQrs.length === 0)
   const [paymentProof, setPaymentProof] = useState<File | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [discountLoading, setDiscountLoading] = useState(false)
@@ -81,11 +100,21 @@ export default function Booking() {
   useEffect(() => {
     let isMounted = true
 
-    Promise.all([fetchActivePaymentQrs(), fetchBookingDurationPrices()]).then(([qrs, prices]) => {
+    fetchActivePaymentQrs().then((qrs) => {
       if (!isMounted) return
 
       setPaymentQrs(qrs)
-      setSelectedQrId(qrs[0]?.id || null)
+      setSelectedQrId((current) => (qrs.some((qr) => qr.id === current) ? current : qrs[0]?.id || null))
+      localStorage.setItem(paymentQrCacheKey, JSON.stringify(qrs))
+    }).catch((error) => {
+      console.warn("No se pudieron cargar los QR de pago:", error)
+    }).finally(() => {
+      if (isMounted) setQrLoading(false)
+    })
+
+    fetchBookingDurationPrices().then((prices) => {
+      if (!isMounted) return
+
       if (prices.length > 0) {
         setDurationPrices(prices)
         setDraft((current) => ({
@@ -93,7 +122,7 @@ export default function Booking() {
           pricingRuleId: current.pricingRuleId || prices[0].id,
         }))
       }
-    })
+    }).catch((error) => console.warn("No se pudieron cargar los precios:", error))
 
     return () => {
       isMounted = false
@@ -106,12 +135,22 @@ export default function Booking() {
 
   const selectedPackage = durationPrices.find((item) => item.id === draft.pricingRuleId) || durationPrices[0]
   const selectedQr = paymentQrs.find((qr) => qr.id === selectedQrId) || null
+  const selectedQrExpired = Boolean(
+    selectedQr?.expiresAt && new Date(selectedQr.expiresAt).getTime() <= Date.now(),
+  )
   const subtotal = selectedPackage?.price || 0
   const discountAmount = draft.appliedDiscount?.discountAmount || 0
   const total = draft.appliedDiscount?.total ?? subtotal
 
   const canContinueFromStepOne = draft.fullName.trim() && draft.phone.replace(/\D/g, "").length >= 7 && draft.nationalId.trim()
   const canContinueFromStepTwo = draft.date && draft.time && selectedPackage
+
+  useEffect(() => {
+    if (!selectedQr?.imagePath) return
+
+    const image = new Image()
+    image.src = selectedQr.imagePath
+  }, [selectedQr?.imagePath])
 
   const summaryRows = useMemo(
     () => [
@@ -189,7 +228,7 @@ export default function Booking() {
   }
 
   const handleQrDownload = async () => {
-    if (!selectedQr) return
+    if (!selectedQr || selectedQrExpired) return
 
     try {
       const response = await fetch(selectedQr.imagePath)
@@ -262,6 +301,16 @@ export default function Booking() {
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    if (!selectedQr) {
+      setErrorMessage("Aun no hay QR activo configurado.")
+      return
+    }
+
+    if (selectedQrExpired) {
+      setErrorMessage("El QR de pago ha expirado. Por favor comunicate con administracion.")
+      return
+    }
+
     if (!selectedPackage || !paymentProof) {
       setErrorMessage("Sube el comprobante de pago para registrar la reserva.")
       return
@@ -460,9 +509,15 @@ export default function Booking() {
                 ))}
               </div>
 
-              {selectedQr ? (
+              {selectedQr && !selectedQrExpired ? (
                 <div className="booking-qr">
-                  <img src={selectedQr.imagePath} alt={selectedQr.label} />
+                  <img
+                    src={selectedQr.imagePath}
+                    alt={selectedQr.label}
+                    loading="eager"
+                    decoding="async"
+                    fetchPriority="high"
+                  />
                   <div>
                     <strong>{selectedQr.label}</strong>
                     <span>Total final a pagar: Bs {total.toFixed(2)}</span>
@@ -470,12 +525,23 @@ export default function Booking() {
                       Escanea el QR y paga el monto exacto indicado. Luego sube tu comprobante
                       de pago o ingresa la referencia para que podamos verificar tu reserva.
                     </p>
+                    {selectedQr.expiresAt ? (
+                      <p className="booking-qr-expiry">
+                        QR valido hasta: {formatQrExpiryDate(selectedQr.expiresAt)}
+                      </p>
+                    ) : null}
                     {selectedQr.instructions ? <p>{selectedQr.instructions}</p> : null}
                     <button type="button" className="booking-secondary-button booking-secondary-button--soft" onClick={handleQrDownload}>
                       Descargar QR
                     </button>
                   </div>
                 </div>
+              ) : selectedQrExpired ? (
+                <p className="booking-warning booking-warning--danger">
+                  El QR de pago ha expirado. Por favor comunicate con administracion.
+                </p>
+              ) : qrLoading ? (
+                <p className="booking-warning booking-warning--loading">Cargando QR de pago...</p>
               ) : (
                 <p className="booking-warning">Aun no hay QR activo configurado.</p>
               )}

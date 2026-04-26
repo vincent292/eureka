@@ -31,15 +31,32 @@ import {
   fetchAdminPedidosYaPromo,
   fetchAdminPaymentQrHistory,
   fetchAdminPaymentQrs,
+  fetchAdminProductCategories,
+  fetchAdminProducts,
+  fetchAdminRestaurantTables,
+  fetchAdminLiveOrders,
   fetchAdminPricingRules,
+  cleanupOldOrderReceipts,
   createDiscountToken,
   createHeroSlide,
   createNoveltyItem,
+  createProduct,
+  createProductCategory,
+  createProductOption,
+  createProductOptionGroup,
+  createProductVariant,
   createPricingRule,
+  createRestaurantTable,
   deleteDiscountToken,
   deleteHeroSlide,
   deleteNoveltyItem,
+  deleteProduct,
+  deleteProductCategory,
+  deleteProductOption,
+  deleteProductOptionGroup,
+  deleteProductVariant,
   deletePricingRule,
+  deleteRestaurantTable,
   markNotificationSeen,
   reorderHeroSlides,
   reorderNoveltyItems,
@@ -51,7 +68,14 @@ import {
   updateNoveltyItem,
   updatePedidosYaPromo,
   updatePaymentQrProtected,
+  updateProduct,
+  updateProductCategory,
+  updateProductOption,
+  updateProductOptionGroup,
+  updateProductVariant,
   updatePricingRule,
+  updateLiveOrderStatus,
+  updateRestaurantTable,
   uploadAdminImage,
   type AdminBooking,
   type AdminDiscountToken,
@@ -62,7 +86,16 @@ import {
   type AdminPedidosYaPromo,
   type AdminPaymentQr,
   type AdminPaymentQrHistory,
+  type AdminProduct,
+  type AdminProductCategory,
+  type AdminProductOption,
+  type AdminProductOptionGroup,
+  type AdminProductVariant,
   type AdminPricingRule,
+  type AdminLiveOrder,
+  type AdminOrderStatus,
+  type AdminPaymentStatus,
+  type AdminRestaurantTable,
 } from "../lib/adminDashboardService"
 import { supabase } from "../lib/supabaseClient"
 import "../styles/AdminDashboard.css"
@@ -78,6 +111,7 @@ type Contact = {
 type ReservationViewMode = "grid" | "list"
 type CalendarViewMode = "day" | "week" | "month"
 type AdminViewMode = "grid" | "list"
+type ProductStatusFilter = "all" | "active" | "inactive"
 type AdminEditorModal =
   | { type: "pricing"; id: string }
   | { type: "discount"; id: string }
@@ -85,6 +119,9 @@ type AdminEditorModal =
   | { type: "novelty"; id: string }
   | { type: "pedidosya"; id: string }
   | { type: "paymentQr"; id: string }
+  | { type: "productCategory"; id: string }
+  | { type: "product"; id: string }
+  | { type: "table"; id: string }
   | null
 
 type AdminSection =
@@ -94,6 +131,9 @@ type AdminSection =
   | "pricing"
   | "discounts"
   | "paymentQr"
+  | "products"
+  | "tables"
+  | "orders"
   | "landing"
   | "novelties"
   | "messages"
@@ -110,6 +150,9 @@ const adminSections: Array<{
   { id: "pricing", label: "Precios", icon: FaTags },
   { id: "discounts", label: "Tokens", icon: FaPercent },
   { id: "paymentQr", label: "QR de pago", icon: FaQrcode },
+  { id: "products", label: "Productos", icon: FaClipboardList },
+  { id: "tables", label: "Mesas", icon: FaQrcode },
+  { id: "orders", label: "Pedidos en vivo", icon: FaBell },
   { id: "landing", label: "Landing", icon: FaHome },
   { id: "novelties", label: "Novedades", icon: FaTags },
   { id: "messages", label: "Mensajes", icon: FaWhatsapp },
@@ -117,6 +160,31 @@ const adminSections: Array<{
 ]
 
 const today = new Date().toISOString().slice(0, 10)
+const qrExpiryAlertDays = 7
+const defaultPaymentQrForm = {
+  label: "QR de pago Eureka",
+  instructions: "Escanea este QR para realizar el pago.",
+  expiresAt: "",
+}
+const allowedQrImageTypes = ["image/png", "image/jpeg", "image/webp"]
+const allowedCatalogImageTypes = ["image/png", "image/jpeg", "image/webp"]
+const orderStatusLabels: Record<AdminOrderStatus, string> = {
+  new: "Nuevo",
+  pending_review: "Revision",
+  accepted: "Aceptado",
+  preparing: "Preparando",
+  ready: "Listo",
+  delivered: "Entregado",
+  rejected: "Rechazado",
+  cancelled: "Cancelado",
+}
+
+const paymentStatusLabels: Record<AdminPaymentStatus, string> = {
+  pending: "QR pendiente",
+  paid: "Pagado",
+  rejected: "Pago rechazado",
+  cash_pending: "Caja pendiente",
+}
 
 const playNotificationTone = () => {
   const AudioContextCtor = window.AudioContext
@@ -159,6 +227,57 @@ const formatDateKey = (date: Date) => {
   const month = `${date.getMonth() + 1}`.padStart(2, "0")
   const day = `${date.getDate()}`.padStart(2, "0")
   return `${year}-${month}-${day}`
+}
+
+const getQrExpiryStatus = (expiresAt: string | null) => {
+  if (!expiresAt) {
+    return {
+      label: "Sin vencimiento",
+      tone: "neutral",
+      daysLeft: null,
+    }
+  }
+
+  const expiresTime = new Date(expiresAt).getTime()
+  const diffDays = Math.ceil((expiresTime - Date.now()) / 86400000)
+
+  if (diffDays < 0) {
+    return {
+      label: "Vencido",
+      tone: "danger",
+      daysLeft: diffDays,
+    }
+  }
+
+  if (diffDays <= qrExpiryAlertDays) {
+    return {
+      label: `Vence en ${diffDays} dia${diffDays === 1 ? "" : "s"}`,
+      tone: "warning",
+      daysLeft: diffDays,
+    }
+  }
+
+  return {
+    label: `Vence el ${new Date(expiresAt).toLocaleDateString("es-BO")}`,
+    tone: "ok",
+    daysLeft: diffDays,
+  }
+}
+
+const getElapsedMinutes = (start: string, end?: string | null) =>
+  Math.max(0, Math.floor(((end ? new Date(end).getTime() : Date.now()) - new Date(start).getTime()) / 60000))
+
+const getOrderTimeTone = (order: AdminLiveOrder) => {
+  const minutes = getElapsedMinutes(order.createdAt, order.deliveredAt || order.rejectedAt)
+  if (minutes > 30) return "danger"
+  if (minutes > 15) return "warning"
+  return "ok"
+}
+
+const formatElapsedTime = (order: AdminLiveOrder) => {
+  const minutes = getElapsedMinutes(order.createdAt, order.deliveredAt || order.rejectedAt)
+  if (minutes < 60) return `${minutes} min`
+  return `${Math.floor(minutes / 60)} h ${minutes % 60} min`
 }
 
 const buildDateTime = (dateKey: string, hour: number) => {
@@ -213,6 +332,10 @@ export default function AdminDashboard() {
   const [discountTokens, setDiscountTokens] = useState<AdminDiscountToken[]>([])
   const [paymentQrs, setPaymentQrs] = useState<AdminPaymentQr[]>([])
   const [paymentQrHistory, setPaymentQrHistory] = useState<AdminPaymentQrHistory[]>([])
+  const [productCategories, setProductCategories] = useState<AdminProductCategory[]>([])
+  const [products, setProducts] = useState<AdminProduct[]>([])
+  const [restaurantTables, setRestaurantTables] = useState<AdminRestaurantTable[]>([])
+  const [liveOrders, setLiveOrders] = useState<AdminLiveOrder[]>([])
   const [messageTemplates, setMessageTemplates] = useState<AdminMessageTemplate[]>([])
   const [loading, setLoading] = useState(true)
   const [notificationsOpen, setNotificationsOpen] = useState(false)
@@ -223,8 +346,18 @@ export default function AdminDashboard() {
   const [tokenViewMode, setTokenViewMode] = useState<AdminViewMode>("grid")
   const [landingViewMode, setLandingViewMode] = useState<AdminViewMode>("grid")
   const [noveltyViewMode, setNoveltyViewMode] = useState<AdminViewMode>("grid")
+  const [productViewMode, setProductViewMode] = useState<AdminViewMode>("grid")
+  const [productSearch, setProductSearch] = useState("")
+  const [selectedProductCategoryId, setSelectedProductCategoryId] = useState("all")
+  const [productStatusFilter, setProductStatusFilter] = useState<ProductStatusFilter>("all")
+  const [orderSoundEnabled, setOrderSoundEnabled] = useState(false)
+  const [clockTick, setClockTick] = useState(0)
   const [editorModal, setEditorModal] = useState<AdminEditorModal>(null)
   const [qrSecret, setQrSecret] = useState("")
+  const [pendingPaymentQrFiles, setPendingPaymentQrFiles] = useState<Record<string, File>>({})
+  const [newPaymentQrFile, setNewPaymentQrFile] = useState<File | null>(null)
+  const [newPaymentQrPreviewUrl, setNewPaymentQrPreviewUrl] = useState("")
+  const [newPaymentQrForm, setNewPaymentQrForm] = useState(defaultPaymentQrForm)
   const [draggedBookingId, setDraggedBookingId] = useState<string | null>(null)
   const [expandedMonthDay, setExpandedMonthDay] = useState<string | null>(null)
   const [browserNotificationsEnabled, setBrowserNotificationsEnabled] = useState(
@@ -273,6 +406,10 @@ export default function AdminDashboard() {
         nextDiscountTokens,
         nextPaymentQrs,
         nextPaymentQrHistory,
+        nextProductCategories,
+        nextProducts,
+        nextRestaurantTables,
+        nextLiveOrders,
         nextMessageTemplates,
       ] = await Promise.all([
         fetchAdminBookings(date),
@@ -285,6 +422,10 @@ export default function AdminDashboard() {
         fetchAdminDiscountTokens(),
         fetchAdminPaymentQrs(),
         fetchAdminPaymentQrHistory(),
+        fetchAdminProductCategories(),
+        fetchAdminProducts(),
+        fetchAdminRestaurantTables(),
+        fetchAdminLiveOrders(),
         fetchMessageTemplates(),
       ])
 
@@ -298,6 +439,10 @@ export default function AdminDashboard() {
       setDiscountTokens(nextDiscountTokens)
       setPaymentQrs(nextPaymentQrs)
       setPaymentQrHistory(nextPaymentQrHistory)
+      setProductCategories(nextProductCategories)
+      setProducts(nextProducts)
+      setRestaurantTables(nextRestaurantTables)
+      setLiveOrders(nextLiveOrders)
       setMessageTemplates(nextMessageTemplates)
       setBookingNotes(
         Object.fromEntries(
@@ -352,6 +497,48 @@ export default function AdminDashboard() {
   useEffect(() => {
     setSidebarOpen(false)
   }, [activeSection])
+
+  useEffect(() => {
+    if (!newPaymentQrFile) {
+      setNewPaymentQrPreviewUrl("")
+      return
+    }
+
+    const previewUrl = URL.createObjectURL(newPaymentQrFile)
+    setNewPaymentQrPreviewUrl(previewUrl)
+
+    return () => URL.revokeObjectURL(previewUrl)
+  }, [newPaymentQrFile])
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setClockTick((current) => current + 1), 60000)
+    return () => window.clearInterval(timer)
+  }, [])
+
+  useEffect(() => {
+    cleanupOldOrderReceipts().catch((error) => console.error(error))
+  }, [])
+
+  useEffect(() => {
+    const channel = supabase
+      .channel("eureka-live-orders")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "orders" },
+        () => {
+          loadDashboard(selectedDate, false).catch((error) => console.error(error))
+          setSaveMessage("Nuevo pedido recibido.")
+          if (orderSoundEnabled) {
+            playNotificationTone()
+          }
+        },
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [orderSoundEnabled, selectedDate])
 
   const signOut = async () => {
     await supabase.auth.signOut()
@@ -682,26 +869,465 @@ export default function AdminDashboard() {
   const handlePaymentQrUpload = async (qr: AdminPaymentQr, file: File | undefined) => {
     if (!file) return
 
+    if (!allowedQrImageTypes.includes(file.type)) {
+      setSaveMessage("Solo se admiten imagenes PNG, JPG, JPEG o WEBP para el QR.")
+      return
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setSaveMessage("La imagen del QR debe pesar 5 MB o menos.")
+      return
+    }
+
+    setPendingPaymentQrFiles((current) => ({ ...current, [qr.id]: file }))
+    setSaveMessage("QR seleccionado. Ingresa la clave, fecha de vencimiento y guarda para subirlo.")
+  }
+
+  const handleNewPaymentQrUpload = (file: File | undefined) => {
+    if (!file) return
+
+    if (!allowedQrImageTypes.includes(file.type)) {
+      setSaveMessage("Solo se admiten imagenes PNG, JPG, JPEG o WEBP para el QR.")
+      return
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setSaveMessage("La imagen del QR debe pesar 5 MB o menos.")
+      return
+    }
+
+    setNewPaymentQrFile(file)
+    setSaveMessage("QR seleccionado. Completa la fecha y la clave para activarlo.")
+  }
+
+  const handlePaymentQrCreate = async () => {
     try {
-      const imagePath = await uploadAdminImage("qr", file)
-      setPaymentQrs((current) =>
-        current.map((item) => (item.id === qr.id ? { ...item, imagePath } : item)),
+      if (!newPaymentQrFile) {
+        setSaveMessage("Sube una imagen QR antes de guardar.")
+        return
+      }
+
+      if (!newPaymentQrForm.expiresAt) {
+        setSaveMessage("Elige una fecha de expiracion para el QR.")
+        return
+      }
+
+      if (!qrSecret.trim()) {
+        setSaveMessage("Ingresa la clave para cambiar el QR.")
+        return
+      }
+
+      const imagePath = await uploadAdminImage("qr", newPaymentQrFile)
+      await updatePaymentQrProtected(
+        {
+          id: activePaymentQr?.id || null,
+          label: newPaymentQrForm.label.trim() || "QR de pago Eureka",
+          imagePath,
+          instructions: newPaymentQrForm.instructions,
+          isActive: true,
+          expiresAt: new Date(`${newPaymentQrForm.expiresAt}T23:59:59`).toISOString(),
+        },
+        qrSecret,
       )
-      setSaveMessage("Imagen QR subida. Ingresa la clave y guarda para activar el cambio.")
+
+      setQrSecret("")
+      setNewPaymentQrFile(null)
+      setNewPaymentQrForm(defaultPaymentQrForm)
+      setSaveMessage("QR de pago creado y activado.")
+      await loadDashboard(selectedDate, false)
     } catch (error) {
-      setSaveMessage(error instanceof Error ? error.message : "No se pudo subir el QR.")
+      setSaveMessage(error instanceof Error ? error.message : "No se pudo crear el QR.")
     }
   }
 
   const handlePaymentQrSave = async (qr: AdminPaymentQr) => {
     try {
-      await updatePaymentQrProtected(qr, qrSecret)
+      if (!qrSecret.trim()) {
+        setSaveMessage("Ingresa la clave para cambiar el QR.")
+        return
+      }
+
+      if (!qr.expiresAt) {
+        setSaveMessage("Elige una fecha de expiracion para el QR.")
+        return
+      }
+
+      const pendingFile = pendingPaymentQrFiles[qr.id]
+      const qrToSave = pendingFile
+        ? { ...qr, imagePath: await uploadAdminImage("qr", pendingFile) }
+        : qr
+
+      await updatePaymentQrProtected(qrToSave, qrSecret)
       setQrSecret("")
+      setPendingPaymentQrFiles((current) => {
+        const next = { ...current }
+        delete next[qr.id]
+        return next
+      })
       setSaveMessage("QR de pago actualizado y registrado en historial.")
+      setEditorModal(null)
       await loadDashboard(selectedDate, false)
     } catch (error) {
       setSaveMessage(error instanceof Error ? error.message : "No se pudo actualizar el QR.")
     }
+  }
+
+  const validateCatalogImage = (file: File) => {
+    if (!allowedCatalogImageTypes.includes(file.type)) {
+      throw new Error("Solo se admiten imagenes PNG, JPG, JPEG o WEBP.")
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      throw new Error("La imagen debe pesar 5 MB o menos.")
+    }
+  }
+
+  const handleProductCategoryCreate = async () => {
+    try {
+      await createProductCategory({
+        name: "Nueva categoria",
+        sortOrder: productCategories.length + 1,
+      })
+      setSaveMessage("Categoria creada.")
+      await loadDashboard(selectedDate, false)
+    } catch (error) {
+      setSaveMessage(error instanceof Error ? error.message : "No se pudo crear la categoria.")
+    }
+  }
+
+  const handleProductCategorySave = async (category: AdminProductCategory) => {
+    if (!category.name.trim()) {
+      setSaveMessage("El nombre de la categoria es obligatorio.")
+      return
+    }
+
+    try {
+      await updateProductCategory(category.id, category)
+      setSaveMessage("Categoria guardada.")
+      setEditorModal(null)
+      await loadDashboard(selectedDate, false)
+    } catch (error) {
+      setSaveMessage(error instanceof Error ? error.message : "No se pudo guardar la categoria.")
+    }
+  }
+
+  const handleProductCategoryDelete = async (category: AdminProductCategory) => {
+    const productsInCategory = products.filter((product) => product.categoryId === category.id)
+    if (
+      productsInCategory.length > 0 &&
+      !window.confirm("Esta categoria tiene productos. Se desactivara en lugar de eliminarse.")
+    ) {
+      return
+    }
+
+    try {
+      if (productsInCategory.length > 0) {
+        await updateProductCategory(category.id, { isActive: false })
+        setSaveMessage("Categoria desactivada porque tiene productos.")
+      } else {
+        await deleteProductCategory(category.id)
+        setSaveMessage("Categoria eliminada.")
+      }
+      await loadDashboard(selectedDate, false)
+    } catch (error) {
+      setSaveMessage(error instanceof Error ? error.message : "No se pudo eliminar la categoria.")
+    }
+  }
+
+  const handleProductCategoryUpload = async (category: AdminProductCategory, file: File | undefined) => {
+    if (!file) return
+
+    try {
+      validateCatalogImage(file)
+      const imagePath = await uploadAdminImage("products", file)
+      await updateProductCategory(category.id, { imagePath })
+      setSaveMessage("Imagen de categoria subida.")
+      await loadDashboard(selectedDate, false)
+    } catch (error) {
+      setSaveMessage(error instanceof Error ? error.message : "No se pudo subir la imagen.")
+    }
+  }
+
+  const handleProductCreate = async () => {
+    const categoryId =
+      selectedProductCategoryId !== "all" ? selectedProductCategoryId : productCategories[0]?.id
+
+    if (!categoryId) {
+      setSaveMessage("Crea una categoria antes de agregar productos.")
+      return
+    }
+
+    try {
+      await createProduct(categoryId, {
+        name: "Nuevo producto",
+        sortOrder: products.filter((product) => product.categoryId === categoryId).length + 1,
+      })
+      setSelectedProductCategoryId(categoryId)
+      setSaveMessage("Producto creado.")
+      await loadDashboard(selectedDate, false)
+    } catch (error) {
+      setSaveMessage(error instanceof Error ? error.message : "No se pudo crear el producto.")
+    }
+  }
+
+  const handleProductSave = async (product: AdminProduct) => {
+    if (!product.name.trim()) {
+      setSaveMessage("El nombre del producto es obligatorio.")
+      return
+    }
+
+    if (!product.categoryId) {
+      setSaveMessage("El producto debe tener categoria.")
+      return
+    }
+
+    if (product.basePrice < 0) {
+      setSaveMessage("El precio base no puede ser negativo.")
+      return
+    }
+
+    try {
+      await updateProduct(product.id, product)
+      setSaveMessage("Producto guardado.")
+      setEditorModal(null)
+      await loadDashboard(selectedDate, false)
+    } catch (error) {
+      setSaveMessage(error instanceof Error ? error.message : "No se pudo guardar el producto.")
+    }
+  }
+
+  const handleProductDelete = async (product: AdminProduct) => {
+    if (!window.confirm(`Eliminar ${product.name}? Tambien se eliminaran sus variantes y opciones.`)) {
+      return
+    }
+
+    try {
+      await deleteProduct(product.id)
+      setSaveMessage("Producto eliminado.")
+      await loadDashboard(selectedDate, false)
+    } catch (error) {
+      setSaveMessage(error instanceof Error ? error.message : "No se pudo eliminar el producto.")
+    }
+  }
+
+  const handleProductUpload = async (product: AdminProduct, file: File | undefined) => {
+    if (!file) return
+
+    try {
+      validateCatalogImage(file)
+      const imagePath = await uploadAdminImage("products", file)
+      await updateProduct(product.id, { imagePath })
+      setSaveMessage("Imagen del producto subida.")
+      await loadDashboard(selectedDate, false)
+    } catch (error) {
+      setSaveMessage(error instanceof Error ? error.message : "No se pudo subir la imagen.")
+    }
+  }
+
+  const handleVariantCreate = async (productId: string) => {
+    try {
+      await createProductVariant(productId)
+      setSaveMessage("Variante agregada.")
+      await loadDashboard(selectedDate, false)
+    } catch (error) {
+      setSaveMessage(error instanceof Error ? error.message : "No se pudo crear la variante.")
+    }
+  }
+
+  const handleVariantSave = async (variant: AdminProductVariant) => {
+    if (!variant.name.trim()) {
+      setSaveMessage("La variante necesita nombre.")
+      return
+    }
+
+    if (variant.price < 0) {
+      setSaveMessage("El precio de la variante no puede ser negativo.")
+      return
+    }
+
+    try {
+      await updateProductVariant(variant.id, variant)
+      setSaveMessage("Variante guardada.")
+      await loadDashboard(selectedDate, false)
+    } catch (error) {
+      setSaveMessage(error instanceof Error ? error.message : "No se pudo guardar la variante.")
+    }
+  }
+
+  const handleOptionGroupCreate = async (productId: string) => {
+    try {
+      await createProductOptionGroup(productId)
+      setSaveMessage("Grupo de opciones agregado.")
+      await loadDashboard(selectedDate, false)
+    } catch (error) {
+      setSaveMessage(error instanceof Error ? error.message : "No se pudo crear el grupo.")
+    }
+  }
+
+  const handleOptionGroupSave = async (group: AdminProductOptionGroup) => {
+    if (!group.name.trim()) {
+      setSaveMessage("El grupo necesita nombre.")
+      return
+    }
+
+    if (group.maxSelect < group.minSelect) {
+      setSaveMessage("El maximo de opciones no puede ser menor que el minimo.")
+      return
+    }
+
+    try {
+      await updateProductOptionGroup(group.id, group)
+      setSaveMessage("Grupo de opciones guardado.")
+      await loadDashboard(selectedDate, false)
+    } catch (error) {
+      setSaveMessage(error instanceof Error ? error.message : "No se pudo guardar el grupo.")
+    }
+  }
+
+  const handleOptionCreate = async (optionGroupId: string) => {
+    try {
+      await createProductOption(optionGroupId)
+      setSaveMessage("Opcion agregada.")
+      await loadDashboard(selectedDate, false)
+    } catch (error) {
+      setSaveMessage(error instanceof Error ? error.message : "No se pudo crear la opcion.")
+    }
+  }
+
+  const handleOptionSave = async (option: AdminProductOption) => {
+    if (!option.name.trim()) {
+      setSaveMessage("La opcion necesita nombre.")
+      return
+    }
+
+    if (option.extraPrice < 0) {
+      setSaveMessage("El precio extra no puede ser negativo.")
+      return
+    }
+
+    try {
+      await updateProductOption(option.id, option)
+      setSaveMessage("Opcion guardada.")
+      await loadDashboard(selectedDate, false)
+    } catch (error) {
+      setSaveMessage(error instanceof Error ? error.message : "No se pudo guardar la opcion.")
+    }
+  }
+
+  const handleVariantDelete = async (id: string) => {
+    try {
+      await deleteProductVariant(id)
+      setSaveMessage("Variante eliminada.")
+      await loadDashboard(selectedDate, false)
+    } catch (error) {
+      setSaveMessage(error instanceof Error ? error.message : "No se pudo eliminar la variante.")
+    }
+  }
+
+  const handleOptionGroupDelete = async (id: string) => {
+    try {
+      await deleteProductOptionGroup(id)
+      setSaveMessage("Grupo eliminado.")
+      await loadDashboard(selectedDate, false)
+    } catch (error) {
+      setSaveMessage(error instanceof Error ? error.message : "No se pudo eliminar el grupo.")
+    }
+  }
+
+  const handleOptionDelete = async (id: string) => {
+    try {
+      await deleteProductOption(id)
+      setSaveMessage("Opcion eliminada.")
+      await loadDashboard(selectedDate, false)
+    } catch (error) {
+      setSaveMessage(error instanceof Error ? error.message : "No se pudo eliminar la opcion.")
+    }
+  }
+
+  const handleTableCreate = async () => {
+    const nextNumber = Math.max(0, ...restaurantTables.map((table) => table.tableNumber)) + 1
+    try {
+      await createRestaurantTable(nextNumber)
+      setSaveMessage("Mesa creada con QR unico.")
+      await loadDashboard(selectedDate, false)
+    } catch (error) {
+      setSaveMessage(error instanceof Error ? error.message : "No se pudo crear la mesa.")
+    }
+  }
+
+  const handleTableSave = async (table: AdminRestaurantTable) => {
+    if (table.tableNumber <= 0) {
+      setSaveMessage("El numero de mesa debe ser mayor a cero.")
+      return
+    }
+
+    if (!table.tableCode.trim()) {
+      setSaveMessage("La mesa necesita un codigo unico.")
+      return
+    }
+
+    try {
+      await updateRestaurantTable(table.id, table)
+      setSaveMessage("Mesa guardada.")
+      setEditorModal(null)
+      await loadDashboard(selectedDate, false)
+    } catch (error) {
+      setSaveMessage(error instanceof Error ? error.message : "No se pudo guardar la mesa.")
+    }
+  }
+
+  const handleTableDelete = async (table: AdminRestaurantTable) => {
+    if (!window.confirm(`Eliminar o desactivar ${table.tableName || `Mesa ${table.tableNumber}`}?`)) {
+      return
+    }
+
+    try {
+      await deleteRestaurantTable(table.id)
+      setSaveMessage("Mesa eliminada o desactivada.")
+      await loadDashboard(selectedDate, false)
+    } catch (error) {
+      setSaveMessage(error instanceof Error ? error.message : "No se pudo eliminar la mesa.")
+    }
+  }
+
+  const publicTableUrl = (tableCode: string) => `${window.location.origin}/menu/mesa/${tableCode}`
+  const tableQrUrl = (tableCode: string) =>
+    `https://api.qrserver.com/v1/create-qr-code/?size=420x420&data=${encodeURIComponent(publicTableUrl(tableCode))}`
+
+  const handleOrderStatus = async (
+    order: AdminLiveOrder,
+    orderStatus: AdminOrderStatus,
+    paymentStatus?: AdminPaymentStatus | null,
+  ) => {
+    try {
+      await updateLiveOrderStatus(order.id, orderStatus, paymentStatus)
+      setSaveMessage("Pedido actualizado.")
+      await loadDashboard(selectedDate, false)
+    } catch (error) {
+      setSaveMessage(error instanceof Error ? error.message : "No se pudo actualizar el pedido.")
+    }
+  }
+
+  const handleOrderReject = async (order: AdminLiveOrder) => {
+    const reason = window.prompt("Motivo de rechazo")
+    if (reason === null) return
+
+    try {
+      await updateLiveOrderStatus(order.id, "rejected", "rejected", reason)
+      setSaveMessage("Pedido rechazado.")
+      await loadDashboard(selectedDate, false)
+    } catch (error) {
+      setSaveMessage(error instanceof Error ? error.message : "No se pudo rechazar el pedido.")
+    }
+  }
+
+  const openOrderWhatsApp = (order: AdminLiveOrder, type: "accepted" | "rejected") => {
+    const phone = order.customerPhone.replace(/\D/g, "")
+    const message =
+      type === "accepted"
+        ? `Hola ${order.customerName}, tu pedido ${order.orderCode} fue aceptado y esta en preparacion.`
+        : `Hola ${order.customerName}, tu pedido ${order.orderCode} fue rechazado. Motivo: ${order.rejectionReason || "No pudimos procesarlo."}`
+    window.open(`https://wa.me/591${phone}?text=${encodeURIComponent(message)}`, "_blank")
   }
 
   const moveNoveltyItem = async (targetId: string) => {
@@ -752,7 +1378,10 @@ export default function AdminDashboard() {
     }
   }
 
-  const unseenCount = notifications.filter((notification) => notification.status !== "seen").length
+  const pendingLiveOrderCount = liveOrders.filter((order) =>
+    ["new", "pending_review"].includes(order.orderStatus),
+  ).length
+  const unseenCount = notifications.filter((notification) => notification.status !== "seen").length + pendingLiveOrderCount
   const pendingBookings = bookings.filter((booking) =>
     ["pending_payment", "pendiente_verificacion"].includes(booking.status),
   )
@@ -822,6 +1451,31 @@ export default function AdminDashboard() {
   const editingNovelty = editorModal?.type === "novelty" ? noveltyItems.find((item) => item.id === editorModal.id) : null
   const editingPedidosYa = editorModal?.type === "pedidosya" ? pedidosYaPromo : null
   const editingPaymentQr = editorModal?.type === "paymentQr" ? paymentQrs.find((item) => item.id === editorModal.id) : null
+  const editingProductCategory = editorModal?.type === "productCategory" ? productCategories.find((item) => item.id === editorModal.id) : null
+  const editingProduct = editorModal?.type === "product" ? products.find((item) => item.id === editorModal.id) : null
+  const editingTable = editorModal?.type === "table" ? restaurantTables.find((item) => item.id === editorModal.id) : null
+  const activePaymentQr = paymentQrs.find((qr) => qr.isActive) || null
+  const qrExpiryAlerts = paymentQrs
+    .map((qr) => ({ qr, status: getQrExpiryStatus(qr.expiresAt) }))
+    .filter(({ status }) => status.tone === "warning" || status.tone === "danger")
+  const categoryById = new Map(productCategories.map((category) => [category.id, category]))
+  const visibleProducts = products.filter((product) => {
+    const searchText = `${product.name} ${product.description || ""} ${categoryById.get(product.categoryId)?.name || ""}`.toLowerCase()
+    const matchesSearch = searchText.includes(productSearch.trim().toLowerCase())
+    const matchesCategory =
+      selectedProductCategoryId === "all" || product.categoryId === selectedProductCategoryId
+    const matchesStatus =
+      productStatusFilter === "all" ||
+      (productStatusFilter === "active" ? product.isActive : !product.isActive)
+
+    return matchesSearch && matchesCategory && matchesStatus
+  })
+  const liveOrdersForRender = liveOrders.map((order) => ({
+    ...order,
+    timeTone: getOrderTimeTone(order),
+    elapsedLabel: formatElapsedTime(order),
+    refreshKey: clockTick,
+  }))
 
   return (
     <main className="admin-dashboard">
@@ -1430,6 +2084,114 @@ export default function AdminDashboard() {
               </div>
             </div>
 
+            {qrExpiryAlerts.length > 0 ? (
+              <div className="admin-alert-list">
+                {qrExpiryAlerts.map(({ qr, status }) => (
+                  <div key={qr.id} className={`admin-alert admin-alert--${status.tone}`}>
+                    <FaBell />
+                    <span>
+                      {qr.label}: {status.label}. Actualiza el QR antes de que deje de mostrarse en reservas.
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
+            <section className="admin-panel-card admin-qr-manager">
+              <div>
+                <span className="admin-kicker">QR activo actual</span>
+                {activePaymentQr ? (
+                  <>
+                    <div className="admin-preview-card admin-preview-card--qr">
+                      <img src={activePaymentQr.imagePath} alt={activePaymentQr.label} />
+                      <div>
+                        <span>{getQrExpiryStatus(activePaymentQr.expiresAt).label}</span>
+                        <strong>{activePaymentQr.label}</strong>
+                      </div>
+                    </div>
+                    <p className="admin-template-help">
+                      {activePaymentQr.expiresAt
+                        ? `QR valido hasta: ${new Date(activePaymentQr.expiresAt).toLocaleDateString("es-BO")}`
+                        : "QR sin fecha de expiracion"}
+                    </p>
+                  </>
+                ) : (
+                  <div className="admin-empty-state">
+                    <FaQrcode />
+                    <strong>No hay QR activo configurado</strong>
+                    <p>Sube una imagen, define su fecha de expiracion y guarda con la clave.</p>
+                  </div>
+                )}
+
+                {newPaymentQrPreviewUrl ? (
+                  <div className="admin-qr-preview-new">
+                    <span className="admin-kicker">Vista previa nuevo QR</span>
+                    <div className="admin-preview-card admin-preview-card--qr">
+                      <img src={newPaymentQrPreviewUrl} alt="Vista previa del nuevo QR" />
+                      <div>
+                        <span>Pendiente de guardar</span>
+                        <strong>{newPaymentQrForm.label || "Nuevo QR"}</strong>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="admin-modal-form">
+                <label>
+                  Nombre
+                  <input
+                    value={newPaymentQrForm.label}
+                    onChange={(event) =>
+                      setNewPaymentQrForm((current) => ({ ...current, label: event.target.value }))
+                    }
+                  />
+                </label>
+                <label>
+                  Subir nuevo QR
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    onChange={(event) => handleNewPaymentQrUpload(event.target.files?.[0])}
+                  />
+                  {newPaymentQrFile ? <small>{newPaymentQrFile.name}</small> : null}
+                </label>
+                <label>
+                  Fecha de expiracion
+                  <input
+                    type="date"
+                    min={today}
+                    value={newPaymentQrForm.expiresAt}
+                    onChange={(event) =>
+                      setNewPaymentQrForm((current) => ({ ...current, expiresAt: event.target.value }))
+                    }
+                  />
+                </label>
+                <label>
+                  Instrucciones
+                  <textarea
+                    value={newPaymentQrForm.instructions}
+                    onChange={(event) =>
+                      setNewPaymentQrForm((current) => ({ ...current, instructions: event.target.value }))
+                    }
+                  />
+                </label>
+                <label>
+                  Clave de proteccion
+                  <input
+                    type="password"
+                    value={qrSecret}
+                    onChange={(event) => setQrSecret(event.target.value)}
+                    placeholder="Clave obligatoria"
+                  />
+                </label>
+                <button type="button" className="btn-edit" onClick={handlePaymentQrCreate}>
+                  <FaSave />
+                  <span>Actualizar QR</span>
+                </button>
+              </div>
+            </section>
+
             <div className="admin-preview-grid">
               {paymentQrs.map((qr) => (
                 <article key={qr.id} className="admin-preview-tile admin-preview-tile--image">
@@ -1441,6 +2203,9 @@ export default function AdminDashboard() {
                     </div>
                   </div>
                   <p>Actualizado: {new Date(qr.updatedAt).toLocaleString("es-BO")}</p>
+                  <p className={`admin-expiry admin-expiry--${getQrExpiryStatus(qr.expiresAt).tone}`}>
+                    {getQrExpiryStatus(qr.expiresAt).label}
+                  </p>
                   <button type="button" className="btn-edit" onClick={() => setEditorModal({ type: "paymentQr", id: qr.id })}>
                     <FaEdit />
                     Editar QR
@@ -1468,10 +2233,305 @@ export default function AdminDashboard() {
                       </div>
                     </div>
                     <p>{qr.instructions || "Sin instrucciones"}</p>
+                    <p>{qr.expiresAt ? `Vencia: ${new Date(qr.expiresAt).toLocaleDateString("es-BO")}` : "Sin vencimiento registrado"}</p>
                   </article>
                 ))}
               </div>
             </section>
+          </section>
+        ) : null}
+
+        {!loading && activeSection === "products" ? (
+          <section className="admin-content">
+            <div className="admin-section-heading">
+              <div>
+                <span className="admin-kicker">Catalogo</span>
+                <h2>Catalogo de productos</h2>
+                <p className="admin-template-help">
+                  Gestiona categorias, productos, variantes y opciones para el flujo de pedidos.
+                </p>
+              </div>
+              <div className="admin-inline-actions">
+                <button type="button" className="btn-approve" onClick={handleProductCategoryCreate}>
+                  <FaPlus />
+                  <span>Nueva categoria</span>
+                </button>
+                <button type="button" className="btn-edit" onClick={handleProductCreate}>
+                  <FaPlus />
+                  <span>Nuevo producto</span>
+                </button>
+              </div>
+            </div>
+
+            <section className="admin-panel-card admin-product-tools">
+              <input
+                value={productSearch}
+                onChange={(event) => setProductSearch(event.target.value)}
+                placeholder="Buscar producto, categoria o descripcion"
+              />
+              <select
+                value={selectedProductCategoryId}
+                onChange={(event) => setSelectedProductCategoryId(event.target.value)}
+              >
+                <option value="all">Todas las categorias</option>
+                {productCategories.map((category) => (
+                  <option key={category.id} value={category.id}>
+                    {category.name}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={productStatusFilter}
+                onChange={(event) => setProductStatusFilter(event.target.value as ProductStatusFilter)}
+              >
+                <option value="all">Todos los estados</option>
+                <option value="active">Activos</option>
+                <option value="inactive">Inactivos</option>
+              </select>
+              <div className="admin-view-toggle">
+                <button type="button" className={productViewMode === "grid" ? "is-active" : ""} onClick={() => setProductViewMode("grid")}>
+                  <FaThLarge /> Mosaico
+                </button>
+                <button type="button" className={productViewMode === "list" ? "is-active" : ""} onClick={() => setProductViewMode("list")}>
+                  <FaList /> Lista
+                </button>
+              </div>
+            </section>
+
+            <section className="admin-panel-card">
+              <div className="admin-section-heading">
+                <div>
+                  <span className="admin-kicker">Categorias</span>
+                  <h2>Secciones del menu</h2>
+                </div>
+              </div>
+              <div className="admin-category-strip">
+                <button
+                  type="button"
+                  className={selectedProductCategoryId === "all" ? "is-active" : ""}
+                  onClick={() => setSelectedProductCategoryId("all")}
+                >
+                  Todas
+                  <span>{products.length}</span>
+                </button>
+                {productCategories.map((category) => (
+                  <article key={category.id} className={!category.isActive ? "is-muted" : ""}>
+                    {category.imagePath ? <img src={category.imagePath} alt={category.name} /> : <FaTags />}
+                    <div>
+                      <strong>{category.name}</strong>
+                      <span>
+                        {products.filter((product) => product.categoryId === category.id).length} productos
+                      </span>
+                    </div>
+                    <button type="button" className="btn-edit" onClick={() => setEditorModal({ type: "productCategory", id: category.id })}>
+                      <FaEdit />
+                    </button>
+                    <button type="button" className="btn-reject" onClick={() => handleProductCategoryDelete(category)}>
+                      <FaTrash />
+                    </button>
+                  </article>
+                ))}
+              </div>
+            </section>
+
+            <div className={`admin-product-grid admin-product-grid--${productViewMode}`}>
+              {visibleProducts.length === 0 ? (
+                <section className="admin-panel-card">
+                  <p className="admin-template-help">No hay productos para este filtro.</p>
+                </section>
+              ) : null}
+              {visibleProducts.map((product) => {
+                const category = categoryById.get(product.categoryId)
+                const priceLabel = product.variants.length > 0
+                  ? `Desde Bs ${Math.min(...product.variants.map((variant) => variant.price)).toFixed(2)}`
+                  : `Bs ${product.basePrice.toFixed(2)}`
+
+                return (
+                  <article key={product.id} className={`admin-product-card ${!product.isActive ? "is-muted" : ""}`}>
+                    <div className="admin-product-image">
+                      {product.imagePath ? (
+                        <img src={product.imagePath} alt={product.name} />
+                      ) : (
+                        <FaTags />
+                      )}
+                    </div>
+                    <div className="admin-product-body">
+                      <div className="admin-card-toolbar">
+                        <span className={`status-pill status-pill--${product.isActive ? "confirmed" : "cancelled"}`}>
+                          {product.isActive ? "Activo" : "Inactivo"}
+                        </span>
+                        {product.productType === "combo" ? <span className="admin-product-badge">Combo</span> : null}
+                      </div>
+                      <strong>{product.name}</strong>
+                      <p>{product.description || "Sin descripcion"}</p>
+                      <div className="admin-product-meta">
+                        <span>{category?.name || "Sin categoria"}</span>
+                        <strong>{priceLabel}</strong>
+                      </div>
+                      <div className="admin-product-meta">
+                        <span>{product.variants.length} variantes</span>
+                        <span>{product.optionGroups.length} grupos de opciones</span>
+                      </div>
+                    </div>
+                    <div className="admin-inline-actions">
+                      <button type="button" className="btn-edit" onClick={() => setEditorModal({ type: "product", id: product.id })}>
+                        <FaEdit />
+                        <span>Editar</span>
+                      </button>
+                      <button type="button" className="btn-reject" onClick={() => handleProductDelete(product)}>
+                        <FaTrash />
+                        <span>Eliminar</span>
+                      </button>
+                    </div>
+                  </article>
+                )
+              })}
+            </div>
+          </section>
+        ) : null}
+
+        {!loading && activeSection === "tables" ? (
+          <section className="admin-content">
+            <div className="admin-section-heading">
+              <div>
+                <span className="admin-kicker">Mesas</span>
+                <h2>QR por mesa</h2>
+                <p className="admin-template-help">
+                  Cada mesa tiene una URL publica unica para que los clientes hagan pedidos.
+                </p>
+              </div>
+              <button type="button" className="btn-approve" onClick={handleTableCreate}>
+                <FaPlus />
+                <span>Nueva mesa</span>
+              </button>
+            </div>
+
+            <div className="admin-table-grid">
+              {restaurantTables.map((table) => (
+                <article key={table.id} className={`admin-table-card ${!table.isActive ? "is-muted" : ""}`}>
+                  <div className="admin-table-card__qr">
+                    <img src={tableQrUrl(table.tableCode)} alt={`QR ${table.tableName || table.tableNumber}`} />
+                  </div>
+                  <div className="admin-table-card__body">
+                    <span className={`status-pill status-pill--${table.isActive ? "confirmed" : "cancelled"}`}>
+                      {table.isActive ? "Activa" : "Inactiva"}
+                    </span>
+                    <h3>{table.tableName || `Mesa ${table.tableNumber}`}</h3>
+                    <p>{table.tableCode}</p>
+                    <a href={publicTableUrl(table.tableCode)} target="_blank" rel="noreferrer">
+                      {publicTableUrl(table.tableCode)}
+                    </a>
+                  </div>
+                  <div className="admin-inline-actions">
+                    <a className="btn-edit" href={tableQrUrl(table.tableCode)} download={`mesa-${table.tableNumber}-qr.png`}>
+                      <FaDownload />
+                      <span>QR</span>
+                    </a>
+                    <button type="button" className="btn-edit" onClick={() => setEditorModal({ type: "table", id: table.id })}>
+                      <FaEdit />
+                      <span>Editar</span>
+                    </button>
+                    <button type="button" className="btn-reject" onClick={() => handleTableDelete(table)}>
+                      <FaTrash />
+                      <span>Eliminar</span>
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
+        {!loading && activeSection === "orders" ? (
+          <section className="admin-content">
+            <div className="admin-section-heading">
+              <div>
+                <span className="admin-kicker">Pedidos</span>
+                <h2>Pedidos en vivo</h2>
+                <p className="admin-template-help">
+                  Nuevos pedidos por mesa con tiempos, pagos y comprobantes.
+                </p>
+              </div>
+              <div className="admin-inline-actions">
+                <button type="button" className="btn-approve" onClick={() => { setOrderSoundEnabled(true); playNotificationTone() }}>
+                  <FaBell />
+                  <span>{orderSoundEnabled ? "Sonido activo" : "Activar sonido"}</span>
+                </button>
+                <button type="button" className="btn-edit" onClick={() => loadDashboard(selectedDate, false)}>
+                  <FaSave />
+                  <span>Actualizar</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="admin-live-order-grid">
+              {liveOrdersForRender.length === 0 ? (
+                <section className="admin-panel-card">
+                  <p className="admin-template-help">Aun no hay pedidos de mesa.</p>
+                </section>
+              ) : null}
+              {liveOrdersForRender.map((order) => (
+                <article key={`${order.id}-${order.refreshKey}`} className={`admin-live-order admin-live-order--${order.timeTone}`}>
+                  <div className="admin-card-toolbar">
+                    <div>
+                      <span className="admin-kicker">Mesa {order.tableNumber || "-"}</span>
+                      <h3>{order.orderCode}</h3>
+                    </div>
+                    <span className={`admin-order-time admin-order-time--${order.timeTone}`}>
+                      {order.deliveredAt ? `Total ${order.elapsedLabel}` : order.elapsedLabel}
+                    </span>
+                  </div>
+                  <div className="admin-order-badges">
+                    <span>{orderStatusLabels[order.orderStatus]}</span>
+                    <span>{paymentStatusLabels[order.paymentStatus]}</span>
+                    <span>{order.paymentMethod === "qr" ? "Pago QR" : "Caja/efectivo"}</span>
+                  </div>
+                  <p><strong>{order.customerName}</strong> | {order.customerPhone}</p>
+                  <div className="admin-order-items">
+                    {order.items.map((item) => (
+                      <div key={item.id}>
+                        <strong>{item.quantity} x {item.productName}</strong>
+                        {item.variantName ? <span>{item.variantName}</span> : null}
+                        {item.options.map((option) => (
+                          <span key={option.id}>{option.groupName}: {option.optionName}</span>
+                        ))}
+                        {item.notes ? <em>{item.notes}</em> : null}
+                      </div>
+                    ))}
+                  </div>
+                  {order.receipts.filter((receipt) => !receipt.isDeleted).map((receipt) => (
+                    <a key={receipt.id} className="admin-proof-link" href={receipt.imagePath} target="_blank" rel="noreferrer">
+                      Ver comprobante
+                    </a>
+                  ))}
+                  {order.rejectionReason ? <p className="admin-order-reason">Motivo: {order.rejectionReason}</p> : null}
+                  <div className="admin-product-meta">
+                    <span>Creado: {new Date(order.createdAt).toLocaleTimeString("es-BO", { hour: "2-digit", minute: "2-digit" })}</span>
+                    <strong>Bs {order.total.toFixed(2)}</strong>
+                  </div>
+                  <div className="admin-inline-actions">
+                    <button type="button" className="btn-approve" onClick={() => handleOrderStatus(order, "accepted", order.paymentMethod === "cash" ? "paid" : "paid")}>
+                      Aceptar
+                    </button>
+                    <button type="button" className="btn-edit" onClick={() => handleOrderStatus(order, "preparing")}>
+                      Preparando
+                    </button>
+                    <button type="button" className="btn-edit" onClick={() => handleOrderStatus(order, "ready")}>
+                      Listo
+                    </button>
+                    <button type="button" className="btn-approve" onClick={() => handleOrderStatus(order, "delivered")}>
+                      Entregado
+                    </button>
+                    <button type="button" className="btn-reject" onClick={() => handleOrderReject(order)}>
+                      Rechazar
+                    </button>
+                    <button type="button" className="btn-whatsapp" onClick={() => openOrderWhatsApp(order, order.orderStatus === "rejected" ? "rejected" : "accepted")}>
+                      <FaWhatsapp />
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
           </section>
         ) : null}
 
@@ -1781,9 +2841,13 @@ export default function AdminDashboard() {
                     {editorModal.type === "hero" ? "Slide" : null}
                     {editorModal.type === "novelty" ? "Novedad" : null}
                     {editorModal.type === "pedidosya" ? "PedidosYa" : null}
+                    {editorModal.type === "paymentQr" ? "QR de pago" : null}
+                    {editorModal.type === "productCategory" ? "Categoria" : null}
+                    {editorModal.type === "product" ? "Producto" : null}
+                    {editorModal.type === "table" ? "Mesa" : null}
                   </h2>
                 </div>
-                <button type="button" className="admin-modal-close" onClick={() => setEditorModal(null)}>
+                <button type="button" className="admin-modal-close" onClick={() => { setEditorModal(null); setQrSecret("") }}>
                   <FaTimes />
                 </button>
               </div>
@@ -1863,11 +2927,137 @@ export default function AdminDashboard() {
                     <div><span>QR activo</span><strong>{editingPaymentQr.label}</strong></div>
                   </div>
                   <label>Nombre<input value={editingPaymentQr.label} onChange={(event) => setPaymentQrs((current) => current.map((item) => item.id === editingPaymentQr.id ? { ...item, label: event.target.value } : item))} /></label>
-                  <label>Subir nuevo QR<input type="file" accept="image/*" onChange={(event) => handlePaymentQrUpload(editingPaymentQr, event.target.files?.[0])} /></label>
+                  <label>Subir nuevo QR<input type="file" accept="image/*" onChange={(event) => handlePaymentQrUpload(editingPaymentQr, event.target.files?.[0])} />{pendingPaymentQrFiles[editingPaymentQr.id] ? <small>{pendingPaymentQrFiles[editingPaymentQr.id].name}</small> : null}</label>
                   <label>Instrucciones<textarea value={editingPaymentQr.instructions || ""} onChange={(event) => setPaymentQrs((current) => current.map((item) => item.id === editingPaymentQr.id ? { ...item, instructions: event.target.value } : item))} /></label>
+                  <label>Fecha de vencimiento<input type="date" value={editingPaymentQr.expiresAt ? editingPaymentQr.expiresAt.slice(0, 10) : ""} onChange={(event) => setPaymentQrs((current) => current.map((item) => item.id === editingPaymentQr.id ? { ...item, expiresAt: event.target.value ? new Date(`${event.target.value}T23:59:59`).toISOString() : null } : item))} /></label>
                   <label className="admin-switch"><input type="checkbox" checked={editingPaymentQr.isActive} onChange={(event) => setPaymentQrs((current) => current.map((item) => item.id === editingPaymentQr.id ? { ...item, isActive: event.target.checked } : item))} />Activo</label>
                   <label>Clave para cambiar QR<input type="password" value={qrSecret} onChange={(event) => setQrSecret(event.target.value)} placeholder="Clave obligatoria" /></label>
-                  <button type="button" className="btn-edit" onClick={() => { handlePaymentQrSave(editingPaymentQr); setEditorModal(null) }}><FaSave />Guardar QR protegido</button>
+                  <button type="button" className="btn-edit" onClick={() => handlePaymentQrSave(editingPaymentQr)}><FaSave />Guardar QR protegido</button>
+                </div>
+              ) : null}
+
+              {editingProductCategory ? (
+                <div className="admin-modal-form">
+                  {editingProductCategory.imagePath ? (
+                    <div className="admin-preview-card">
+                      <img src={editingProductCategory.imagePath} alt={editingProductCategory.name} />
+                      <div><span>Categoria</span><strong>{editingProductCategory.name}</strong></div>
+                    </div>
+                  ) : null}
+                  <label>Nombre<input value={editingProductCategory.name} onChange={(event) => setProductCategories((current) => current.map((item) => item.id === editingProductCategory.id ? { ...item, name: event.target.value } : item))} /></label>
+                  <label>Descripcion<textarea value={editingProductCategory.description || ""} onChange={(event) => setProductCategories((current) => current.map((item) => item.id === editingProductCategory.id ? { ...item, description: event.target.value } : item))} /></label>
+                  <label>Imagen<input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => handleProductCategoryUpload(editingProductCategory, event.target.files?.[0])} /></label>
+                  <div className="admin-mini-grid">
+                    <label>Orden<input type="number" value={editingProductCategory.sortOrder} onChange={(event) => setProductCategories((current) => current.map((item) => item.id === editingProductCategory.id ? { ...item, sortOrder: Number(event.target.value) } : item))} /></label>
+                    <label className="admin-switch"><input type="checkbox" checked={editingProductCategory.isActive} onChange={(event) => setProductCategories((current) => current.map((item) => item.id === editingProductCategory.id ? { ...item, isActive: event.target.checked } : item))} />Activa</label>
+                  </div>
+                  <button type="button" className="btn-edit" onClick={() => handleProductCategorySave(editingProductCategory)}><FaSave />Guardar categoria</button>
+                </div>
+              ) : null}
+
+              {editingProduct ? (
+                <div className="admin-modal-form admin-product-editor">
+                  <div className="admin-product-editor__top">
+                    <div className="admin-preview-card">
+                      {editingProduct.imagePath ? <img src={editingProduct.imagePath} alt={editingProduct.name} /> : null}
+                      <div><span>{editingProduct.productType}</span><strong>{editingProduct.name}</strong></div>
+                    </div>
+                    <div className="admin-product-editor__fields">
+                      <label>Nombre<input value={editingProduct.name} onChange={(event) => setProducts((current) => current.map((item) => item.id === editingProduct.id ? { ...item, name: event.target.value } : item))} /></label>
+                      <label>Categoria<select value={editingProduct.categoryId} onChange={(event) => setProducts((current) => current.map((item) => item.id === editingProduct.id ? { ...item, categoryId: event.target.value } : item))}>{productCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
+                      <label>Descripcion<textarea value={editingProduct.description || ""} onChange={(event) => setProducts((current) => current.map((item) => item.id === editingProduct.id ? { ...item, description: event.target.value } : item))} /></label>
+                    </div>
+                  </div>
+
+                  <div className="admin-mini-grid">
+                    <label>Precio base<input type="number" min="0" step="0.5" value={editingProduct.basePrice} onChange={(event) => setProducts((current) => current.map((item) => item.id === editingProduct.id ? { ...item, basePrice: Number(event.target.value) } : item))} /></label>
+                    <label>Tipo<select value={editingProduct.productType} onChange={(event) => setProducts((current) => current.map((item) => item.id === editingProduct.id ? { ...item, productType: event.target.value as AdminProduct["productType"] } : item))}><option value="simple">Simple</option><option value="combo">Combo</option></select></label>
+                    <label>Orden<input type="number" value={editingProduct.sortOrder} onChange={(event) => setProducts((current) => current.map((item) => item.id === editingProduct.id ? { ...item, sortOrder: Number(event.target.value) } : item))} /></label>
+                  </div>
+                  <label>Imagen<input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => handleProductUpload(editingProduct, event.target.files?.[0])} /></label>
+                  <div className="admin-inline-actions">
+                    <label className="admin-switch"><input type="checkbox" checked={editingProduct.isActive} onChange={(event) => setProducts((current) => current.map((item) => item.id === editingProduct.id ? { ...item, isActive: event.target.checked } : item))} />Activo</label>
+                    <label className="admin-switch"><input type="checkbox" checked={editingProduct.isFeatured} onChange={(event) => setProducts((current) => current.map((item) => item.id === editingProduct.id ? { ...item, isFeatured: event.target.checked } : item))} />Destacado</label>
+                  </div>
+                  <button type="button" className="btn-edit" onClick={() => handleProductSave(editingProduct)}><FaSave />Guardar producto</button>
+
+                  <section className="admin-product-editor-section">
+                    <div className="admin-card-toolbar">
+                      <strong>Variantes</strong>
+                      <button type="button" className="btn-approve" onClick={() => handleVariantCreate(editingProduct.id)}><FaPlus />Agregar variante</button>
+                    </div>
+                    {editingProduct.variants.length === 0 ? <p className="admin-template-help">Sin variantes. El producto usara su precio base.</p> : null}
+                    {editingProduct.variants.map((variant) => (
+                      <article key={variant.id} className="admin-nested-editor">
+                        <div className="admin-mini-grid">
+                          <label>Nombre<input value={variant.name} onChange={(event) => setProducts((current) => current.map((product) => product.id === editingProduct.id ? { ...product, variants: product.variants.map((item) => item.id === variant.id ? { ...item, name: event.target.value } : item) } : product))} /></label>
+                          <label>Precio<input type="number" min="0" step="0.5" value={variant.price} onChange={(event) => setProducts((current) => current.map((product) => product.id === editingProduct.id ? { ...product, variants: product.variants.map((item) => item.id === variant.id ? { ...item, price: Number(event.target.value) } : item) } : product))} /></label>
+                          <label>Orden<input type="number" value={variant.sortOrder} onChange={(event) => setProducts((current) => current.map((product) => product.id === editingProduct.id ? { ...product, variants: product.variants.map((item) => item.id === variant.id ? { ...item, sortOrder: Number(event.target.value) } : item) } : product))} /></label>
+                        </div>
+                        <label>Descripcion<input value={variant.description || ""} onChange={(event) => setProducts((current) => current.map((product) => product.id === editingProduct.id ? { ...product, variants: product.variants.map((item) => item.id === variant.id ? { ...item, description: event.target.value } : item) } : product))} /></label>
+                        <div className="admin-inline-actions">
+                          <label className="admin-switch"><input type="checkbox" checked={variant.isActive} onChange={(event) => setProducts((current) => current.map((product) => product.id === editingProduct.id ? { ...product, variants: product.variants.map((item) => item.id === variant.id ? { ...item, isActive: event.target.checked } : item) } : product))} />Activa</label>
+                          <button type="button" className="btn-edit" onClick={() => handleVariantSave(variant)}><FaSave />Guardar</button>
+                          <button type="button" className="btn-reject" onClick={() => handleVariantDelete(variant.id)}><FaTrash />Eliminar</button>
+                        </div>
+                      </article>
+                    ))}
+                  </section>
+
+                  <section className="admin-product-editor-section">
+                    <div className="admin-card-toolbar">
+                      <strong>Opciones configurables</strong>
+                      <button type="button" className="btn-approve" onClick={() => handleOptionGroupCreate(editingProduct.id)}><FaPlus />Agregar grupo</button>
+                    </div>
+                    {editingProduct.optionGroups.length === 0 ? <p className="admin-template-help">Sin grupos de opciones.</p> : null}
+                    {editingProduct.optionGroups.map((group) => (
+                      <article key={group.id} className="admin-nested-editor">
+                        <div className="admin-mini-grid">
+                          <label>Grupo<input value={group.name} onChange={(event) => setProducts((current) => current.map((product) => product.id === editingProduct.id ? { ...product, optionGroups: product.optionGroups.map((item) => item.id === group.id ? { ...item, name: event.target.value } : item) } : product))} /></label>
+                          <label>Seleccion<select value={group.selectionType} onChange={(event) => setProducts((current) => current.map((product) => product.id === editingProduct.id ? { ...product, optionGroups: product.optionGroups.map((item) => item.id === group.id ? { ...item, selectionType: event.target.value as AdminProductOptionGroup["selectionType"] } : item) } : product))}><option value="single">Unica</option><option value="multiple">Multiple</option></select></label>
+                          <label>Min<input type="number" min="0" value={group.minSelect} onChange={(event) => setProducts((current) => current.map((product) => product.id === editingProduct.id ? { ...product, optionGroups: product.optionGroups.map((item) => item.id === group.id ? { ...item, minSelect: Number(event.target.value) } : item) } : product))} /></label>
+                          <label>Max<input type="number" min="0" value={group.maxSelect} onChange={(event) => setProducts((current) => current.map((product) => product.id === editingProduct.id ? { ...product, optionGroups: product.optionGroups.map((item) => item.id === group.id ? { ...item, maxSelect: Number(event.target.value) } : item) } : product))} /></label>
+                        </div>
+                        <div className="admin-inline-actions">
+                          <label className="admin-switch"><input type="checkbox" checked={group.isRequired} onChange={(event) => setProducts((current) => current.map((product) => product.id === editingProduct.id ? { ...product, optionGroups: product.optionGroups.map((item) => item.id === group.id ? { ...item, isRequired: event.target.checked } : item) } : product))} />Obligatorio</label>
+                          <label className="admin-switch"><input type="checkbox" checked={group.isActive} onChange={(event) => setProducts((current) => current.map((product) => product.id === editingProduct.id ? { ...product, optionGroups: product.optionGroups.map((item) => item.id === group.id ? { ...item, isActive: event.target.checked } : item) } : product))} />Activo</label>
+                          <button type="button" className="btn-edit" onClick={() => handleOptionGroupSave(group)}><FaSave />Guardar grupo</button>
+                          <button type="button" className="btn-reject" onClick={() => handleOptionGroupDelete(group.id)}><FaTrash />Eliminar grupo</button>
+                          <button type="button" className="btn-approve" onClick={() => handleOptionCreate(group.id)}><FaPlus />Agregar opcion</button>
+                        </div>
+                        {group.options.map((option) => (
+                          <div key={option.id} className="admin-option-row">
+                            <input value={option.name} onChange={(event) => setProducts((current) => current.map((product) => product.id === editingProduct.id ? { ...product, optionGroups: product.optionGroups.map((item) => item.id === group.id ? { ...item, options: item.options.map((nextOption) => nextOption.id === option.id ? { ...nextOption, name: event.target.value } : nextOption) } : item) } : product))} />
+                            <input type="number" min="0" step="0.5" value={option.extraPrice} onChange={(event) => setProducts((current) => current.map((product) => product.id === editingProduct.id ? { ...product, optionGroups: product.optionGroups.map((item) => item.id === group.id ? { ...item, options: item.options.map((nextOption) => nextOption.id === option.id ? { ...nextOption, extraPrice: Number(event.target.value) } : nextOption) } : item) } : product))} />
+                            <label className="admin-switch"><input type="checkbox" checked={option.isActive} onChange={(event) => setProducts((current) => current.map((product) => product.id === editingProduct.id ? { ...product, optionGroups: product.optionGroups.map((item) => item.id === group.id ? { ...item, options: item.options.map((nextOption) => nextOption.id === option.id ? { ...nextOption, isActive: event.target.checked } : nextOption) } : item) } : product))} />Activa</label>
+                            <button type="button" className="btn-edit" onClick={() => handleOptionSave(option)}><FaSave /></button>
+                            <button type="button" className="btn-reject" onClick={() => handleOptionDelete(option.id)}><FaTrash /></button>
+                          </div>
+                        ))}
+                      </article>
+                    ))}
+                  </section>
+                </div>
+              ) : null}
+
+              {editingTable ? (
+                <div className="admin-modal-form">
+                  <div className="admin-table-modal-preview">
+                    <img src={tableQrUrl(editingTable.tableCode)} alt={`QR ${editingTable.tableNumber}`} />
+                    <div>
+                      <span className="admin-kicker">URL publica</span>
+                      <a href={publicTableUrl(editingTable.tableCode)} target="_blank" rel="noreferrer">
+                        {publicTableUrl(editingTable.tableCode)}
+                      </a>
+                    </div>
+                  </div>
+                  <div className="admin-mini-grid">
+                    <label>Numero<input type="number" min="1" value={editingTable.tableNumber} onChange={(event) => setRestaurantTables((current) => current.map((item) => item.id === editingTable.id ? { ...item, tableNumber: Number(event.target.value) } : item))} /></label>
+                    <label>Nombre<input value={editingTable.tableName || ""} onChange={(event) => setRestaurantTables((current) => current.map((item) => item.id === editingTable.id ? { ...item, tableName: event.target.value } : item))} /></label>
+                  </div>
+                  <label>Codigo unico<input value={editingTable.tableCode} onChange={(event) => setRestaurantTables((current) => current.map((item) => item.id === editingTable.id ? { ...item, tableCode: event.target.value.trim() } : item))} /></label>
+                  <label className="admin-switch"><input type="checkbox" checked={editingTable.isActive} onChange={(event) => setRestaurantTables((current) => current.map((item) => item.id === editingTable.id ? { ...item, isActive: event.target.checked } : item))} />Activa</label>
+                  <button type="button" className="btn-edit" onClick={() => handleTableSave(editingTable)}><FaSave />Guardar mesa</button>
                 </div>
               ) : null}
             </div>
