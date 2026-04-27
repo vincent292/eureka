@@ -587,6 +587,19 @@ const slugify = (value: string) =>
     .replace(/^-+|-+$/g, "")
     || newId().slice(0, 8)
 
+const laPazDateRangeToUtc = (date: string) => {
+  const [year, month, day] = date.split("-").map(Number)
+  const start = new Date(Date.UTC(year, month - 1, day, 4, 0, 0, 0))
+  const end = new Date(start)
+  end.setUTCDate(end.getUTCDate() + 1)
+  end.setUTCMilliseconds(end.getUTCMilliseconds() - 1)
+
+  return {
+    start: start.toISOString(),
+    end: end.toISOString(),
+  }
+}
+
 export async function fetchAdminBookings(date?: string) {
   let query = supabase
     .from("bookings")
@@ -596,8 +609,7 @@ export async function fetchAdminBookings(date?: string) {
     .order("starts_at", { ascending: true })
 
   if (date) {
-    const start = `${date}T00:00:00.000Z`
-    const end = `${date}T23:59:59.999Z`
+    const { start, end } = laPazDateRangeToUtc(date)
     query = query.gte("starts_at", start).lte("starts_at", end)
   }
 
@@ -1681,10 +1693,191 @@ export async function fetchSuperAdminOverview(): Promise<SuperAdminOverview> {
   return overview
 }
 
+const removeStorageObjects = async (bucket: string, paths: Array<string | null>) => {
+  const uniquePaths = [...new Set(paths.filter(Boolean).map((path) => toStoragePath(path as string, bucket)))]
+
+  for (let index = 0; index < uniquePaths.length; index += 100) {
+    const { error } = await supabase.storage.from(bucket).remove(uniquePaths.slice(index, index + 100))
+    if (error) throw new Error(error.message)
+  }
+}
+
+const deleteOrdersWithStorageApi = async (
+  filter: "all" | "rejected" | "single",
+  orderId?: string,
+) => {
+  let orderQuery = supabase
+    .from("orders")
+    .select("id")
+
+  if (filter === "rejected") {
+    orderQuery = orderQuery.eq("order_status", "rejected")
+  }
+
+  if (filter === "single" && orderId) {
+    orderQuery = orderQuery.eq("id", orderId)
+  }
+
+  const { data: orders, error: ordersError } = await orderQuery
+  if (ordersError) throw new Error(ordersError.message)
+
+  const orderIds = ((orders || []) as Array<{ id: string }>).map((order) => order.id)
+  if (orderIds.length === 0) {
+    return { ok: true, affected: 0, deleted: 0, secondary: 0 }
+  }
+
+  const receiptPaths: string[] = []
+  for (let index = 0; index < orderIds.length; index += 100) {
+    const { data: receipts, error: receiptsError } = await supabase
+      .from("payment_receipts")
+      .select("image_path")
+      .in("order_id", orderIds.slice(index, index + 100))
+
+    if (receiptsError) throw new Error(receiptsError.message)
+    receiptPaths.push(...((receipts || []) as Array<{ image_path: string }>).map((receipt) => receipt.image_path))
+  }
+
+  for (let index = 0; index < orderIds.length; index += 100) {
+    const { error: deleteError } = await supabase
+      .from("orders")
+      .delete()
+      .in("id", orderIds.slice(index, index + 100))
+
+    if (deleteError) throw new Error(deleteError.message)
+  }
+
+  await removeStorageObjects("receipts", receiptPaths)
+
+  return { ok: true, affected: orderIds.length, deleted: orderIds.length, secondary: receiptPaths.length }
+}
+
+const deleteBookingsWithStorageApi = async (
+  filter: "all" | "past" | "single",
+  bookingId?: string,
+) => {
+  let query = supabase
+    .from("bookings")
+    .select("id, payment_receipt_path")
+
+  if (filter === "past") {
+    query = query.lt("starts_at", new Date().toISOString())
+  }
+
+  if (filter === "single" && bookingId) {
+    query = query.eq("id", bookingId)
+  }
+
+  const { data, error } = await query
+  if (error) throw new Error(error.message)
+
+  const bookingsToDelete = (data || []) as Array<{ id: string; payment_receipt_path: string | null }>
+  await removeStorageObjects("payments", bookingsToDelete.map((booking) => booking.payment_receipt_path))
+
+  const bookingIds = bookingsToDelete.map((booking) => booking.id)
+  for (let index = 0; index < bookingIds.length; index += 100) {
+    const { error: deleteError } = await supabase
+      .from("bookings")
+      .delete()
+      .in("id", bookingIds.slice(index, index + 100))
+
+    if (deleteError) throw new Error(deleteError.message)
+  }
+
+  return { ok: true, affected: bookingIds.length, deleted: bookingIds.length, secondary: 0 }
+}
+
+const deletePaymentQrsWithStorageApi = async (paymentQrId?: string) => {
+  let qrQuery = supabase
+    .from("payment_qrs")
+    .select("id, image_path")
+
+  let historyQuery = supabase
+    .from("payment_qr_history")
+    .select("id, payment_qr_id, image_path")
+
+  if (paymentQrId) {
+    qrQuery = qrQuery.eq("id", paymentQrId)
+    historyQuery = historyQuery.eq("payment_qr_id", paymentQrId)
+  }
+
+  const [qrResult, historyResult] = await Promise.all([qrQuery, historyQuery])
+
+  if (qrResult.error) throw new Error(qrResult.error.message)
+  if (historyResult.error) throw new Error(historyResult.error.message)
+
+  const qrsToDelete = (qrResult.data || []) as Array<{ id: string; image_path: string | null }>
+  const historyToDelete = (historyResult.data || []) as Array<{ id: string; image_path: string | null }>
+  const imagePaths = [
+    ...qrsToDelete.map((qr) => qr.image_path),
+    ...historyToDelete.map((history) => history.image_path),
+  ]
+
+  const historyIds = historyToDelete.map((history) => history.id)
+  for (let index = 0; index < historyIds.length; index += 100) {
+    const { error } = await supabase
+      .from("payment_qr_history")
+      .delete()
+      .in("id", historyIds.slice(index, index + 100))
+
+    if (error) throw new Error(error.message)
+  }
+
+  const qrIds = qrsToDelete.map((qr) => qr.id)
+  for (let index = 0; index < qrIds.length; index += 100) {
+    const { error } = await supabase
+      .from("payment_qrs")
+      .delete()
+      .in("id", qrIds.slice(index, index + 100))
+
+    if (error) throw new Error(error.message)
+  }
+
+  await removeStorageObjects("qr", imagePaths)
+
+  return {
+    ok: true,
+    affected: qrIds.length,
+    deleted: qrIds.length,
+    secondary: historyIds.length,
+  }
+}
+
 export async function runSuperAdminBulkAction(
   action: SuperAdminBulkAction,
   confirmation: string,
 ) {
+  if (action === "delete_all_orders") {
+    if (confirmation !== "ELIMINAR PEDIDOS") {
+      throw new Error("Debes escribir exactamente: ELIMINAR PEDIDOS")
+    }
+    return deleteOrdersWithStorageApi("all")
+  }
+
+  if (action === "delete_rejected_orders") {
+    if (confirmation !== "ELIMINAR RECHAZADOS") {
+      throw new Error("Debes escribir exactamente: ELIMINAR RECHAZADOS")
+    }
+    return deleteOrdersWithStorageApi("rejected")
+  }
+
+  if (action === "delete_all_bookings") {
+    if (confirmation !== "ELIMINAR RESERVAS") {
+      throw new Error("Debes escribir exactamente: ELIMINAR RESERVAS")
+    }
+    return deleteBookingsWithStorageApi("all")
+  }
+
+  if (action === "delete_past_bookings") {
+    if (confirmation !== "ELIMINAR RESERVAS PASADAS") {
+      throw new Error("Debes escribir exactamente: ELIMINAR RESERVAS PASADAS")
+    }
+    return deleteBookingsWithStorageApi("past")
+  }
+
+  if (action === "reset_payment_qr") {
+    return deletePaymentQrsWithStorageApi()
+  }
+
   const { data, error } = await supabase.rpc("super_admin_bulk_action", {
     p_action: action,
     p_confirmation: confirmation,
@@ -1699,6 +1892,18 @@ export async function deleteSuperAdminEntity(
   entityId: string,
   confirmation = "",
 ) {
+  if (entityType === "order") {
+    return deleteOrdersWithStorageApi("single", entityId)
+  }
+
+  if (entityType === "booking") {
+    return deleteBookingsWithStorageApi("single", entityId)
+  }
+
+  if (entityType === "payment_qr") {
+    return deletePaymentQrsWithStorageApi(entityId)
+  }
+
   const { data, error } = await supabase.rpc("super_admin_delete_entity", {
     p_entity_type: entityType,
     p_entity_id: entityId,

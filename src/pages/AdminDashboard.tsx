@@ -119,6 +119,7 @@ type Contact = {
 type ReservationViewMode = "grid" | "list"
 type CalendarViewMode = "day" | "week" | "month"
 type AdminViewMode = "grid" | "list"
+type OrderBoardMode = "active" | "delivered"
 type ProductStatusFilter = "all" | "active" | "inactive"
 type SuperAdminConfirmAction =
   | {
@@ -186,7 +187,14 @@ const adminSections: Array<{
   { id: "superAdmin", label: "Super Admin", icon: FaShieldAlt },
 ]
 
-const today = new Date().toISOString().slice(0, 10)
+const formatDateKey = (date: Date) => {
+  const year = date.getFullYear()
+  const month = `${date.getMonth() + 1}`.padStart(2, "0")
+  const day = `${date.getDate()}`.padStart(2, "0")
+  return `${year}-${month}-${day}`
+}
+
+const today = formatDateKey(new Date())
 const qrExpiryAlertDays = 7
 const defaultPaymentQrForm = {
   label: "QR de pago Eureka",
@@ -248,13 +256,6 @@ const formatReservationDate = (value: string) =>
     month: "short",
     year: "numeric",
   })
-
-const formatDateKey = (date: Date) => {
-  const year = date.getFullYear()
-  const month = `${date.getMonth() + 1}`.padStart(2, "0")
-  const day = `${date.getDate()}`.padStart(2, "0")
-  return `${year}-${month}-${day}`
-}
 
 const getQrExpiryStatus = (expiresAt: string | null) => {
   if (!expiresAt) {
@@ -371,6 +372,7 @@ export default function AdminDashboard() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [reservationViewMode, setReservationViewMode] = useState<ReservationViewMode>("grid")
   const [calendarViewMode, setCalendarViewMode] = useState<CalendarViewMode>("day")
+  const [orderBoardMode, setOrderBoardMode] = useState<OrderBoardMode>("active")
   const [pricingViewMode, setPricingViewMode] = useState<AdminViewMode>("grid")
   const [tokenViewMode, setTokenViewMode] = useState<AdminViewMode>("grid")
   const [landingViewMode, setLandingViewMode] = useState<AdminViewMode>("grid")
@@ -583,6 +585,23 @@ export default function AdminDashboard() {
       supabase.removeChannel(channel)
     }
   }, [orderSoundEnabled, selectedDate])
+
+  useEffect(() => {
+    const channel = supabase
+      .channel("eureka-live-bookings")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "bookings" },
+        () => {
+          loadDashboard(selectedDate, false).catch((error) => console.error(error))
+        },
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [selectedDate])
 
   const signOut = async () => {
     await supabase.auth.signOut()
@@ -1494,8 +1513,8 @@ export default function AdminDashboard() {
       kind: "bulk",
       action: "reset_payment_qr",
       title: "Resetear QR de pago",
-      description: "Elimina QR activos, historial e imagenes asociadas.",
-      confirmation: "RESET QR",
+      description: "Elimina QR activos, inactivos, historial e imagenes asociadas sin usar la clave de proteccion del formulario.",
+      confirmation: "",
     },
     {
       kind: "bulk",
@@ -1531,6 +1550,9 @@ export default function AdminDashboard() {
   const totalRevenue = bookings
     .filter((booking) => booking.status === "confirmed")
     .reduce((sum, booking) => sum + booking.totalAmount, 0)
+  const latestBookings = [...calendarBookings]
+    .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
+    .slice(0, 4)
 
   const bookingsByDateKey = calendarBookings.reduce<Record<string, AdminBooking[]>>((groups, booking) => {
     const key = formatDateKey(new Date(booking.startsAt))
@@ -1612,12 +1634,30 @@ export default function AdminDashboard() {
 
     return matchesSearch && matchesCategory && matchesStatus
   })
-  const liveOrdersForRender = liveOrders.map((order) => ({
+  const activeLiveOrders = liveOrders.filter((order) => order.orderStatus !== "delivered")
+  const deliveredLiveOrders = liveOrders.filter((order) => order.orderStatus === "delivered")
+  const visibleLiveOrders = orderBoardMode === "active" ? activeLiveOrders : deliveredLiveOrders
+  const liveOrdersForRender = visibleLiveOrders.map((order) => ({
     ...order,
     timeTone: getOrderTimeTone(order),
     elapsedLabel: formatElapsedTime(order),
     refreshKey: clockTick,
   }))
+  const nextOrderAction = (order: AdminLiveOrder) => {
+    if (order.orderStatus === "new" || order.orderStatus === "pending_review") {
+      return { label: "Aceptar", status: "accepted" as AdminOrderStatus, className: "btn-approve" }
+    }
+    if (order.orderStatus === "accepted") {
+      return { label: "Preparando", status: "preparing" as AdminOrderStatus, className: "btn-edit" }
+    }
+    if (order.orderStatus === "preparing") {
+      return { label: "Listo", status: "ready" as AdminOrderStatus, className: "btn-edit" }
+    }
+    if (order.orderStatus === "ready") {
+      return { label: "Entregado", status: "delivered" as AdminOrderStatus, className: "btn-approve" }
+    }
+    return null
+  }
 
   return (
     <main className="admin-dashboard">
@@ -1869,6 +1909,32 @@ export default function AdminDashboard() {
             </div>
 
             <div className={`admin-reservation-grid admin-reservation-grid--${reservationViewMode}`}>
+              {bookings.length === 0 ? (
+                <article className="admin-empty-state">
+                  <strong>No hay reservas para {new Date(`${selectedDate}T00:00:00`).toLocaleDateString("es-BO")}.</strong>
+                  <p>
+                    Las reservas se filtran por la fecha de juego. Si acabas de registrar una reserva con otra fecha,
+                    revisala abajo o cambia la fecha del panel.
+                  </p>
+                  {latestBookings.length > 0 ? (
+                    <div className="admin-empty-state__list">
+                      {latestBookings.map((booking) => (
+                        <button
+                          key={booking.id}
+                          type="button"
+                          onClick={() => setSelectedDate(formatDateKey(new Date(booking.startsAt)))}
+                        >
+                          <span>{booking.fullName} | {booking.reservationCode}</span>
+                          <strong>
+                            {formatReservationDate(booking.startsAt)} - {formatReservationTime(booking.startsAt)}
+                          </strong>
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </article>
+              ) : null}
+
               {bookings.map((booking) => (
                 <article
                   key={booking.id}
@@ -2249,6 +2315,16 @@ export default function AdminDashboard() {
                   Para cambiar el QR debes ingresar la clave de proteccion. Cada cambio guarda historial con fecha.
                 </p>
               </div>
+              {isSuperAdmin ? (
+                <button
+                  type="button"
+                  className="btn-danger"
+                  onClick={() => openSuperAdminAction(superAdminDangerActions[4])}
+                >
+                  <FaTrash />
+                  <span>Limpiar QR e historial</span>
+                </button>
+              ) : null}
             </div>
 
             {qrExpiryAlerts.length > 0 ? (
@@ -2377,6 +2453,22 @@ export default function AdminDashboard() {
                     <FaEdit />
                     Editar QR
                   </button>
+                  {isSuperAdmin ? (
+                    <button
+                      type="button"
+                      className="btn-danger"
+                      onClick={() => openSuperAdminAction({
+                        kind: "entity",
+                        entityType: "payment_qr",
+                        entityId: qr.id,
+                        title: `Eliminar QR ${qr.label}`,
+                        description: "Borra este QR, sus cambios historicos relacionados y sus imagenes.",
+                      })}
+                    >
+                      <FaTrash />
+                      Eliminar QR
+                    </button>
+                  ) : null}
                 </article>
               ))}
             </div>
@@ -2626,6 +2718,22 @@ export default function AdminDashboard() {
                 </p>
               </div>
               <div className="admin-inline-actions">
+                <div className="admin-view-toggle">
+                  <button
+                    type="button"
+                    className={orderBoardMode === "active" ? "is-active" : ""}
+                    onClick={() => setOrderBoardMode("active")}
+                  >
+                    Activos ({activeLiveOrders.length})
+                  </button>
+                  <button
+                    type="button"
+                    className={orderBoardMode === "delivered" ? "is-active" : ""}
+                    onClick={() => setOrderBoardMode("delivered")}
+                  >
+                    Entregados ({deliveredLiveOrders.length})
+                  </button>
+                </div>
                 <button type="button" className="btn-approve" onClick={() => { setOrderSoundEnabled(true); playNotificationTone() }}>
                   <FaBell />
                   <span>{orderSoundEnabled ? "Sonido activo" : "Activar sonido"}</span>
@@ -2640,12 +2748,19 @@ export default function AdminDashboard() {
             <div className="admin-live-order-grid">
               {liveOrdersForRender.length === 0 ? (
                 <section className="admin-panel-card">
-                  <p className="admin-template-help">Aun no hay pedidos de mesa.</p>
+                  <p className="admin-template-help">
+                    {orderBoardMode === "active"
+                      ? "No hay pedidos activos por ahora."
+                      : "Todavia no hay pedidos entregados en esta vista."}
+                  </p>
                 </section>
               ) : null}
-              {liveOrdersForRender.map((order) => (
+              {liveOrdersForRender.map((order) => {
+                const nextAction = nextOrderAction(order)
+
+                return (
                 <article key={`${order.id}-${order.refreshKey}`} className={`admin-live-order admin-live-order--${order.timeTone}`}>
-                  <div className="admin-card-toolbar">
+                  <div className="admin-live-order__head">
                     <div>
                       <span className="admin-kicker">Mesa {order.tableNumber || "-"}</span>
                       <h3>{order.orderCode}</h3>
@@ -2654,21 +2769,33 @@ export default function AdminDashboard() {
                       {order.deliveredAt ? `Total ${order.elapsedLabel}` : order.elapsedLabel}
                     </span>
                   </div>
-                  <div className="admin-order-badges">
-                    <span>{orderStatusLabels[order.orderStatus]}</span>
-                    <span>{paymentStatusLabels[order.paymentStatus]}</span>
-                    <span>{order.paymentMethod === "qr" ? "Pago QR" : "Caja/efectivo"}</span>
+
+                  <div className="admin-order-status-line">
+                    {(["accepted", "preparing", "ready", "delivered"] as AdminOrderStatus[]).map((status) => (
+                      <span key={status} className={order.orderStatus === status ? "is-current" : ""}>
+                        {orderStatusLabels[status]}
+                      </span>
+                    ))}
                   </div>
-                  <p><strong>{order.customerName}</strong> | {order.customerPhone}</p>
+
+                  <div className="admin-order-meta-card">
+                    <p><strong>{order.customerName}</strong><span>{order.customerPhone}</span></p>
+                    <p><strong>{paymentStatusLabels[order.paymentStatus]}</strong><span>{order.paymentMethod === "qr" ? "Pago QR" : "Caja/efectivo"}</span></p>
+                  </div>
+
                   <div className="admin-order-items">
                     {order.items.map((item) => (
                       <div key={item.id}>
                         <strong>{item.quantity} x {item.productName}</strong>
-                        {item.variantName ? <span>{item.variantName}</span> : null}
-                        {item.options.map((option) => (
-                          <span key={option.id}>{option.groupName}: {option.optionName}</span>
-                        ))}
-                        {item.notes ? <em>{item.notes}</em> : null}
+                        {item.variantName ? <span>Variacion: {item.variantName}</span> : null}
+                        {item.options.length > 0 ? (
+                          <ul>
+                            {item.options.map((option) => (
+                              <li key={option.id}>{option.groupName}: {option.optionName}</li>
+                            ))}
+                          </ul>
+                        ) : null}
+                        {item.notes ? <em>Nota: {item.notes}</em> : null}
                       </div>
                     ))}
                   </div>
@@ -2683,21 +2810,26 @@ export default function AdminDashboard() {
                     <strong>Bs {order.total.toFixed(2)}</strong>
                   </div>
                   <div className="admin-inline-actions">
-                    <button type="button" className="btn-approve" onClick={() => handleOrderStatus(order, "accepted", order.paymentMethod === "cash" ? "paid" : "paid")}>
-                      Aceptar
-                    </button>
-                    <button type="button" className="btn-edit" onClick={() => handleOrderStatus(order, "preparing")}>
-                      Preparando
-                    </button>
-                    <button type="button" className="btn-edit" onClick={() => handleOrderStatus(order, "ready")}>
-                      Listo
-                    </button>
-                    <button type="button" className="btn-approve" onClick={() => handleOrderStatus(order, "delivered")}>
-                      Entregado
-                    </button>
-                    <button type="button" className="btn-reject" onClick={() => handleOrderReject(order)}>
+                    {nextAction ? (
+                      <button
+                        type="button"
+                        className={nextAction.className}
+                        onClick={() =>
+                          handleOrderStatus(
+                            order,
+                            nextAction.status,
+                            nextAction.status === "accepted" ? "paid" : undefined,
+                          )
+                        }
+                      >
+                        {nextAction.label}
+                      </button>
+                    ) : null}
+                    {order.orderStatus !== "delivered" && order.orderStatus !== "rejected" ? (
+                      <button type="button" className="btn-reject" onClick={() => handleOrderReject(order)}>
                       Rechazar
-                    </button>
+                      </button>
+                    ) : null}
                     <button type="button" className="btn-whatsapp" onClick={() => openOrderWhatsApp(order, order.orderStatus === "rejected" ? "rejected" : "accepted")}>
                       <FaWhatsapp />
                     </button>
@@ -2719,7 +2851,8 @@ export default function AdminDashboard() {
                     ) : null}
                   </div>
                 </article>
-              ))}
+                )
+              })}
             </div>
           </section>
         ) : null}
@@ -3035,7 +3168,11 @@ export default function AdminDashboard() {
                     <div>
                       <strong>{action.title}</strong>
                       <p>{action.description}</p>
-                      <small>Confirmacion: {action.confirmation}</small>
+                      {action.confirmation ? (
+                        <small>Confirmacion: {action.confirmation}</small>
+                      ) : (
+                        <small>Solo requiere sesion Super Admin activa.</small>
+                      )}
                     </div>
                     <button type="button" className="btn-danger" onClick={() => openSuperAdminAction(action)}>
                       Ejecutar
@@ -3113,7 +3250,6 @@ export default function AdminDashboard() {
                           entityId: qr.id,
                           title: `Eliminar QR ${qr.label}`,
                           description: "Borra el registro del QR y su imagen asociada.",
-                          confirmation: qr.isActive ? "RESET QR" : undefined,
                         })}
                       >
                         Borrar

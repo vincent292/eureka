@@ -503,7 +503,7 @@
 .admin-table-grid,
 .admin-live-order-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr));
   gap: 1rem;
 }
 
@@ -582,6 +582,13 @@
   border-left: 8px solid #84ba4a;
 }
 
+.admin-live-order__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
 .admin-live-order--warning {
   border-left-color: #d9a629;
 }
@@ -620,6 +627,32 @@
   gap: 0.5rem;
 }
 
+.admin-order-status-line {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.35rem;
+  padding: 0.35rem;
+  border-radius: 999px;
+  background: rgba(16, 33, 37, 0.05);
+}
+
+.admin-order-status-line span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  padding: 0.2rem 0.35rem;
+  border-radius: 999px;
+  color: #58676b;
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.admin-order-status-line span.is-current {
+  background: #d7ec99;
+  color: #274128;
+}
+
 .admin-order-badges {
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
 }
@@ -637,18 +670,55 @@
   font-weight: 900;
 }
 
-.admin-order-items div {
+.admin-order-meta-card {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.admin-order-meta-card p {
   display: grid;
   gap: 0.2rem;
   padding: 0.7rem;
-  border-radius: 14px;
-  background: #f7faeb;
+  border-radius: 16px;
+  background: rgba(247, 250, 235, 0.9);
+}
+
+.admin-order-meta-card span {
+  color: #58676b;
+  font-size: 0.86rem;
+}
+
+.admin-order-items div {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.85rem;
+  border: 1px solid rgba(95, 135, 66, 0.14);
+  border-radius: 16px;
+  background: linear-gradient(135deg, #f7faeb, rgba(231, 241, 190, 0.42));
+}
+
+.admin-order-items ul {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0;
+  padding-left: 1rem;
 }
 
 .admin-order-items span,
+.admin-order-items li,
 .admin-order-items em {
   color: #58676b;
   font-size: 0.86rem;
+}
+
+.admin-order-items em {
+  padding: 0.45rem 0.55rem;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.76);
+  color: #274128;
+  font-style: normal;
+  font-weight: 800;
 }
 
 .admin-order-reason {
@@ -787,6 +857,7 @@
 .admin-notification-card,
 .admin-calendar-slot,
 .admin-reservation-card,
+.admin-empty-state,
 .admin-editor-card {
   padding: 0.95rem;
   border: 1px solid rgba(16, 33, 37, 0.08);
@@ -829,6 +900,39 @@
 
 .admin-reservation-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.admin-empty-state {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 0.85rem;
+}
+
+.admin-empty-state p {
+  max-width: 680px;
+  margin: 0;
+  color: #58676b;
+}
+
+.admin-empty-state__list {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.admin-empty-state__list button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  width: 100%;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid rgba(39, 65, 40, 0.12);
+  border-radius: 14px;
+  background: rgba(231, 241, 190, 0.36);
+  color: #102125;
+  cursor: pointer;
+  font-weight: 800;
+  text-align: left;
 }
 
 .admin-reservation-grid--list {

@@ -14,7 +14,14 @@ import {
 } from "../lib/bookingService"
 import "../styles/Booking.css"
 
-const today = new Date().toISOString().slice(0, 10)
+const formatDateKey = (date: Date) => {
+  const year = date.getFullYear()
+  const month = `${date.getMonth() + 1}`.padStart(2, "0")
+  const day = `${date.getDate()}`.padStart(2, "0")
+  return `${year}-${month}-${day}`
+}
+
+const today = formatDateKey(new Date())
 const storageKey = "eureka_booking_draft"
 const paymentQrCacheKey = "eureka_active_payment_qrs"
 const fallbackDurations: BookingDurationPrice[] = [
@@ -55,7 +62,11 @@ const initialDraft: BookingDraft = {
 
 const readDraft = () => {
   try {
-    return { ...initialDraft, ...JSON.parse(localStorage.getItem(storageKey) || "{}") } as BookingDraft
+    const draft = { ...initialDraft, ...JSON.parse(localStorage.getItem(storageKey) || "{}") } as BookingDraft
+    return {
+      ...draft,
+      date: draft.date && draft.date >= today ? draft.date : today,
+    }
   } catch {
     return initialDraft
   }
@@ -313,6 +324,13 @@ export default function Booking() {
 
     if (!selectedPackage || !paymentProof) {
       setErrorMessage("Sube el comprobante de pago para registrar la reserva.")
+      return
+    }
+
+    if (draft.date < today) {
+      setErrorMessage("La fecha de reserva no puede ser anterior a hoy. Vuelve a elegir la fecha.")
+      updateDraft({ date: today })
+      setStep(2)
       return
     }
 
