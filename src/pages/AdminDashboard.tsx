@@ -3,6 +3,7 @@ import {
   FaBars,
   FaBell,
   FaCalendarAlt,
+  FaBoxes,
   FaClipboardList,
   FaDownload,
   FaEdit,
@@ -22,6 +23,7 @@ import {
   FaWhatsapp,
 } from "react-icons/fa"
 import { useNavigate } from "react-router-dom"
+import InventoryPanel from "../components/InventoryPanel"
 import {
   fetchAdminBookings,
   fetchAdminDiscountTokens,
@@ -160,6 +162,7 @@ type AdminSection =
   | "products"
   | "tables"
   | "orders"
+  | "inventory"
   | "landing"
   | "novelties"
   | "messages"
@@ -180,6 +183,7 @@ const adminSections: Array<{
   { id: "products", label: "Productos", icon: FaClipboardList },
   { id: "tables", label: "Mesas", icon: FaQrcode },
   { id: "orders", label: "Pedidos en vivo", icon: FaBell },
+  { id: "inventory", label: "Inventario", icon: FaBoxes },
   { id: "landing", label: "Landing", icon: FaHome },
   { id: "novelties", label: "Novedades", icon: FaTags },
   { id: "messages", label: "Mensajes", icon: FaWhatsapp },
@@ -2854,6 +2858,12 @@ export default function AdminDashboard() {
                 )
               })}
             </div>
+          </section>
+        ) : null}
+
+        {!loading && activeSection === "inventory" ? (
+          <section className="admin-content">
+            <InventoryPanel isSuperAdmin={isSuperAdmin} />
           </section>
         ) : null}
 

@@ -2,6 +2,22 @@
 import html2canvas from "html2canvas"
 import jsPDF from "jspdf"
 
+export interface TablePdfColumn {
+  header: string
+  key: string
+  width?: number
+}
+
+export interface TablePdfOptions {
+  title: string
+  subtitle?: string
+  filters?: string[]
+  columns: TablePdfColumn[]
+  rows: Array<Record<string, string | number | null | undefined>>
+  totals?: string[]
+  filename: string
+}
+
 const fileToDataUrl = (file: File): Promise<string> =>
   new Promise((resolve, reject) => {
     const reader = new FileReader()
@@ -60,6 +76,130 @@ const setDraw = (pdf: jsPDF, color: string) => {
 const setText = (pdf: jsPDF, color: string) => {
   const [r, g, b] = hexToRgb(color)
   pdf.setTextColor(r, g, b)
+}
+
+export function exportTablePDF(options: TablePdfOptions) {
+  const pdf = new jsPDF("l", "mm", "letter")
+  const pageWidth = pdf.internal.pageSize.getWidth()
+  const pageHeight = pdf.internal.pageSize.getHeight()
+  const margin = 12
+  const now = new Date()
+  const colors = {
+    ink: "#102125",
+    green: "#274128",
+    cream: "#f6f3eb",
+    paper: "#fffdf8",
+    muted: "#58676b",
+    line: "#dbe5d4",
+  }
+  const rowHeight = 9
+  const headerHeight = 40
+  const tableWidth = pageWidth - margin * 2
+  const explicitWidth = options.columns.reduce((sum, column) => sum + (column.width || 0), 0)
+  const flexibleColumns = options.columns.filter((column) => !column.width).length || 1
+  const flexibleWidth = Math.max(22, (tableWidth - explicitWidth) / flexibleColumns)
+  const widths = options.columns.map((column) => column.width || flexibleWidth)
+
+  const drawPageHeader = (page: number) => {
+    setFill(pdf, colors.cream)
+    pdf.rect(0, 0, pageWidth, pageHeight, "F")
+    setFill(pdf, colors.green)
+    pdf.roundedRect(margin, 10, pageWidth - margin * 2, 20, 5, 5, "F")
+    pdf.setFont("helvetica", "bold")
+    pdf.setFontSize(14)
+    setText(pdf, colors.paper)
+    pdf.text("Eureka", margin + 6, 23)
+    pdf.text(options.title, pageWidth / 2, 23, { align: "center" })
+    pdf.setFont("helvetica", "normal")
+    pdf.setFontSize(8)
+    pdf.text(`Pagina ${page}`, pageWidth - margin - 6, 23, { align: "right" })
+
+    pdf.setFont("helvetica", "normal")
+    pdf.setFontSize(9)
+    setText(pdf, colors.muted)
+    pdf.text(options.subtitle || `Generado el ${formatDate(now)} a las ${formatTime(now)}`, margin, 37)
+    if (options.filters?.length) {
+      pdf.text(`Filtros: ${options.filters.join(" | ")}`, margin, 43)
+    }
+  }
+
+  const drawTableHeader = (y: number) => {
+    setFill(pdf, colors.green)
+    pdf.roundedRect(margin, y, tableWidth, rowHeight, 2, 2, "F")
+    pdf.setFont("helvetica", "bold")
+    pdf.setFontSize(8)
+    setText(pdf, colors.paper)
+    let x = margin
+    options.columns.forEach((column, index) => {
+      pdf.text(column.header, x + 2, y + 6)
+      x += widths[index]
+    })
+  }
+
+  const drawFooter = () => {
+    setDraw(pdf, colors.line)
+    pdf.line(margin, pageHeight - 12, pageWidth - margin, pageHeight - 12)
+    pdf.setFont("helvetica", "normal")
+    pdf.setFontSize(8)
+    setText(pdf, colors.muted)
+    pdf.text("Responsable: __________________________", margin, pageHeight - 6)
+    pdf.text("Mini Golf Eureka", pageWidth - margin, pageHeight - 6, { align: "right" })
+  }
+
+  let page = 1
+  let y = headerHeight + 8
+  drawPageHeader(page)
+  drawTableHeader(y)
+  y += rowHeight
+
+  options.rows.forEach((row, rowIndex) => {
+    if (y + rowHeight > pageHeight - 18) {
+      drawFooter()
+      pdf.addPage()
+      page += 1
+      y = headerHeight + 8
+      drawPageHeader(page)
+      drawTableHeader(y)
+      y += rowHeight
+    }
+
+    setFill(pdf, rowIndex % 2 === 0 ? colors.paper : "#f2f6df")
+    setDraw(pdf, colors.line)
+    pdf.rect(margin, y, tableWidth, rowHeight, "FD")
+    pdf.setFont("helvetica", "normal")
+    pdf.setFontSize(7.5)
+    setText(pdf, colors.ink)
+
+    let x = margin
+    options.columns.forEach((column, index) => {
+      const value = String(row[column.key] ?? "")
+      const clipped = value.length > 34 ? `${value.slice(0, 31)}...` : value
+      pdf.text(clipped, x + 2, y + 6)
+      x += widths[index]
+    })
+    y += rowHeight
+  })
+
+  if (options.totals?.length) {
+    y += 4
+    pdf.setFont("helvetica", "bold")
+    pdf.setFontSize(9)
+    setText(pdf, colors.green)
+    options.totals.forEach((total) => {
+      if (y + 6 > pageHeight - 18) {
+        drawFooter()
+        pdf.addPage()
+        page += 1
+        y = headerHeight + 8
+        drawPageHeader(page)
+      }
+      pdf.text(total, margin, y)
+      y += 6
+    })
+  }
+
+  drawFooter()
+  pdf.save(options.filename)
 }
 
 export async function exportPDF(
