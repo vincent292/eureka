@@ -28,6 +28,7 @@ export interface CreateBookingInput {
   durationMinutes: number
   pricingRuleId: string
   paymentQrId: string | null
+  paymentType: PaymentType
   partySize: number
   paymentReference?: string
   discountCode?: string
@@ -203,7 +204,7 @@ export async function createBooking(
     p_starts_at: startsAt,
     p_duration_minutes: input.durationMinutes,
     p_pricing_rule_id: input.pricingRuleId,
-    p_payment_type: "total",
+    p_payment_type: input.paymentType,
     p_payment_qr_id: input.paymentQrId,
     p_party_size: input.partySize,
     p_payment_reference: input.paymentReference || null,
@@ -242,10 +243,12 @@ export async function createBooking(
 export async function validateDiscountCode(
   code: string,
   pricingRuleId: string,
+  partySize: number,
 ): Promise<DiscountValidationResult> {
   const { data, error } = await supabase.rpc("validate_discount_code", {
     p_code: code,
     p_pricing_rule_id: pricingRuleId,
+    p_party_size: partySize,
   })
 
   if (error) {

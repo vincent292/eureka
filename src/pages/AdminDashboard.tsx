@@ -119,6 +119,7 @@ type Contact = {
 }
 
 type ReservationViewMode = "grid" | "list"
+type ReservationDateScope = "day" | "upcoming" | "all"
 type CalendarViewMode = "day" | "week" | "month"
 type AdminViewMode = "grid" | "list"
 type OrderBoardMode = "active" | "delivered"
@@ -323,6 +324,12 @@ const addDays = (date: Date, days: number) => {
   return copy
 }
 
+const addMonths = (date: Date, months: number) => {
+  const copy = new Date(date)
+  copy.setMonth(copy.getMonth() + months)
+  return copy
+}
+
 const getWeekDays = (dateKey: string) => {
   const base = new Date(`${dateKey}T00:00:00`)
   const mondayOffset = (base.getDay() + 6) % 7
@@ -375,6 +382,9 @@ export default function AdminDashboard() {
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [reservationViewMode, setReservationViewMode] = useState<ReservationViewMode>("grid")
+  const [reservationDateScope, setReservationDateScope] = useState<ReservationDateScope>("day")
+  const [reservationReturnDate, setReservationReturnDate] = useState<string | null>(null)
+  const [showFuturePreview, setShowFuturePreview] = useState(false)
   const [calendarViewMode, setCalendarViewMode] = useState<CalendarViewMode>("day")
   const [orderBoardMode, setOrderBoardMode] = useState<OrderBoardMode>("active")
   const [pricingViewMode, setPricingViewMode] = useState<AdminViewMode>("grid")
@@ -412,6 +422,7 @@ export default function AdminDashboard() {
   const [saveMessage, setSaveMessage] = useState("")
   const [bookingNotes, setBookingNotes] = useState<Record<string, string>>({})
   const seenNotificationIdsRef = useRef<string[]>([])
+  const dirtyBookingNoteIdsRef = useRef<Set<string>>(new Set())
 
   const fetchContacts = async () => {
     const { data, error } = await supabase
@@ -488,11 +499,15 @@ export default function AdminDashboard() {
       setLiveOrders(nextLiveOrders)
       setMessageTemplates(nextMessageTemplates)
       setSuperAdminOverview(nextSuperAdminOverview)
-      setBookingNotes(
-        Object.fromEntries(
-          nextBookings.map((booking) => [booking.id, booking.adminNotes || ""]),
-        ),
-      )
+      setBookingNotes((current) => {
+        const nextNotes: Record<string, string> = {}
+        ;[...nextCalendarBookings, ...nextBookings].forEach((booking) => {
+          nextNotes[booking.id] = dirtyBookingNoteIdsRef.current.has(booking.id)
+            ? current[booking.id] || ""
+            : booking.adminNotes || booking.rejectionReason || ""
+        })
+        return nextNotes
+      })
 
       const unseenIds = nextNotifications
         .filter((notification) => notification.status !== "seen")
@@ -547,6 +562,10 @@ export default function AdminDashboard() {
       setActiveSection("overview")
     }
   }, [activeSection, adminProfile?.role])
+
+  useEffect(() => {
+    setShowFuturePreview(false)
+  }, [selectedDate, activeSection])
 
   useEffect(() => {
     if (!newPaymentQrFile) {
@@ -692,6 +711,7 @@ export default function AdminDashboard() {
         bookingNotes[bookingId] || "",
         status === "rejected" ? bookingNotes[bookingId] || "" : undefined,
       )
+      dirtyBookingNoteIdsRef.current.delete(bookingId)
       setSaveMessage("Reserva actualizada.")
       await loadDashboard(selectedDate, false)
     } catch (error) {
@@ -1554,9 +1574,16 @@ export default function AdminDashboard() {
   const totalRevenue = bookings
     .filter((booking) => booking.status === "confirmed")
     .reduce((sum, booking) => sum + booking.totalAmount, 0)
-  const latestBookings = [...calendarBookings]
-    .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
-    .slice(0, 4)
+  const upcomingBookings = calendarBookings
+    .filter((booking) => formatDateKey(new Date(booking.startsAt)) >= today)
+    .sort((left, right) => new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime())
+  const visibleReservationBookings =
+    reservationDateScope === "day"
+      ? bookings
+      : reservationDateScope === "upcoming"
+        ? upcomingBookings
+        : [...calendarBookings].sort((left, right) => new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime())
+  const futurePreviewBookings = upcomingBookings.slice(0, 6)
 
   const bookingsByDateKey = calendarBookings.reduce<Record<string, AdminBooking[]>>((groups, booking) => {
     const key = formatDateKey(new Date(booking.startsAt))
@@ -1572,6 +1599,25 @@ export default function AdminDashboard() {
 
   const bookingsForDateHour = (dateKey: string, hour: number) =>
     (bookingsByDateKey[dateKey] || []).filter((booking) => new Date(booking.startsAt).getHours() === hour)
+
+  const handleReservationScopeChange = (scope: ReservationDateScope) => {
+    setShowFuturePreview(false)
+    setReservationDateScope(scope)
+  }
+
+  const openFuturePreview = () => {
+    setReservationDateScope("day")
+    setShowFuturePreview(true)
+  }
+
+  const shiftCalendarDate = (direction: -1 | 1) => {
+    const current = new Date(`${selectedDate}T00:00:00`)
+    const nextDate =
+      calendarViewMode === "month"
+        ? addMonths(current, direction)
+        : addDays(current, calendarViewMode === "week" ? direction * 7 : direction)
+    setSelectedDate(formatDateKey(nextDate))
+  }
 
   const templateFor = (type: AdminMessageTemplate["type"]) =>
     messageTemplates.find((template) => template.type === type)?.content || ""
@@ -1662,6 +1708,45 @@ export default function AdminDashboard() {
     }
     return null
   }
+
+  const renderFutureReservationsPreview = (title: string) => (
+    <article className="admin-empty-state">
+      <strong>{title}</strong>
+      <p>
+        Las reservas se filtran por la fecha de juego. Si acabas de registrar una reserva con otra fecha,
+        revisala abajo, cambia la fecha del panel o entra a reservas futuras.
+      </p>
+      <div className="admin-inline-actions">
+        <button type="button" className="btn-edit" onClick={openFuturePreview}>
+          Ver reservas futuras
+        </button>
+        <button type="button" className="btn-approve" onClick={() => handleReservationScopeChange("all")}>
+          Ver todas
+        </button>
+      </div>
+      {futurePreviewBookings.length > 0 ? (
+        <div className="admin-empty-state__list">
+          {futurePreviewBookings.map((booking) => (
+            <button
+              key={booking.id}
+              type="button"
+              onClick={() => {
+                setReservationReturnDate(selectedDate)
+                setShowFuturePreview(false)
+                setReservationDateScope("day")
+                setSelectedDate(formatDateKey(new Date(booking.startsAt)))
+              }}
+            >
+              <span>{booking.fullName} | {booking.reservationCode}</span>
+              <strong>
+                {formatReservationDate(booking.startsAt)} - {formatReservationTime(booking.startsAt)}
+              </strong>
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </article>
+  )
 
   return (
     <main className="admin-dashboard">
@@ -1890,56 +1975,94 @@ export default function AdminDashboard() {
             <div className="admin-section-heading">
               <div>
                 <span className="admin-kicker">Reservas</span>
-                <h2>Gestion completa del dia</h2>
+                <h2>
+                  {reservationDateScope === "day"
+                    ? "Gestion completa del dia"
+                    : reservationDateScope === "upcoming"
+                      ? "Reservas futuras"
+                      : "Todas las reservas"}
+                </h2>
               </div>
-              <div className="admin-view-toggle" aria-label="Cambiar vista de reservas">
-                <button
-                  type="button"
-                  className={reservationViewMode === "grid" ? "is-active" : ""}
-                  onClick={() => setReservationViewMode("grid")}
-                >
-                  <FaThLarge />
-                  Mosaico
-                </button>
-                <button
-                  type="button"
-                  className={reservationViewMode === "list" ? "is-active" : ""}
-                  onClick={() => setReservationViewMode("list")}
-                >
-                  <FaList />
-                  Lista
-                </button>
+              <div className="admin-reservation-toolbar">
+                <div className="admin-view-toggle" aria-label="Filtrar reservas">
+                  <button
+                    type="button"
+                    className={reservationDateScope === "day" ? "is-active" : ""}
+                    onClick={() => handleReservationScopeChange("day")}
+                  >
+                    Del dia
+                  </button>
+                  <button
+                    type="button"
+                    className={reservationDateScope === "upcoming" ? "is-active" : ""}
+                    onClick={() => handleReservationScopeChange("upcoming")}
+                  >
+                    Futuras
+                  </button>
+                  <button
+                    type="button"
+                    className={reservationDateScope === "all" ? "is-active" : ""}
+                    onClick={() => handleReservationScopeChange("all")}
+                  >
+                    Todas
+                  </button>
+                </div>
+                <div className="admin-view-toggle" aria-label="Cambiar vista de reservas">
+                  <button
+                    type="button"
+                    className={reservationViewMode === "grid" ? "is-active" : ""}
+                    onClick={() => setReservationViewMode("grid")}
+                  >
+                    <FaThLarge />
+                    Mosaico
+                  </button>
+                  <button
+                    type="button"
+                    className={reservationViewMode === "list" ? "is-active" : ""}
+                    onClick={() => setReservationViewMode("list")}
+                  >
+                    <FaList />
+                    Lista
+                  </button>
+                </div>
+                {reservationReturnDate ? (
+                  <button
+                    type="button"
+                    className="btn-edit"
+                    onClick={() => {
+                      setSelectedDate(reservationReturnDate)
+                      setReservationReturnDate(null)
+                      handleReservationScopeChange("day")
+                    }}
+                  >
+                    Atras
+                  </button>
+                ) : null}
               </div>
             </div>
 
             <div className={`admin-reservation-grid admin-reservation-grid--${reservationViewMode}`}>
-              {bookings.length === 0 ? (
-                <article className="admin-empty-state">
-                  <strong>No hay reservas para {new Date(`${selectedDate}T00:00:00`).toLocaleDateString("es-BO")}.</strong>
-                  <p>
-                    Las reservas se filtran por la fecha de juego. Si acabas de registrar una reserva con otra fecha,
-                    revisala abajo o cambia la fecha del panel.
-                  </p>
-                  {latestBookings.length > 0 ? (
-                    <div className="admin-empty-state__list">
-                      {latestBookings.map((booking) => (
-                        <button
-                          key={booking.id}
-                          type="button"
-                          onClick={() => setSelectedDate(formatDateKey(new Date(booking.startsAt)))}
-                        >
-                          <span>{booking.fullName} | {booking.reservationCode}</span>
-                          <strong>
-                            {formatReservationDate(booking.startsAt)} - {formatReservationTime(booking.startsAt)}
-                          </strong>
-                        </button>
-                      ))}
-                    </div>
-                  ) : null}
-                </article>
+              {reservationDateScope === "day" && visibleReservationBookings.length > 0 && !showFuturePreview ? (
+                <div className="admin-reservation-quick-actions">
+                  <button type="button" className="btn-edit" onClick={openFuturePreview}>
+                    Ver reservas futuras
+                  </button>
+                </div>
               ) : null}
 
-              {bookings.map((booking) => (
+              {showFuturePreview
+                ? renderFutureReservationsPreview("Reservas futuras")
+                : visibleReservationBookings.length === 0
+                  ? renderFutureReservationsPreview(
+                    reservationDateScope === "day"
+                      ? `No hay reservas para ${new Date(`${selectedDate}T00:00:00`).toLocaleDateString("es-BO")}.`
+                      : reservationDateScope === "upcoming"
+                        ? "No hay reservas futuras registradas."
+                        : "No hay reservas registradas.",
+                  )
+                  : null}
+
+              {!showFuturePreview ? visibleReservationBookings.map((booking) => (
                 <article
                   key={booking.id}
                   className="admin-reservation-card"
@@ -1967,7 +2090,14 @@ export default function AdminDashboard() {
                     <span>{booking.discountCode || "Sin codigo aplicado"}</span>
                     <strong>- Bs {booking.discountAmount.toFixed(2)}</strong>
                   </div>
-                  <p>Total pagado: Bs {booking.totalAmount.toFixed(2)}</p>
+                  <p>Total reserva: Bs {booking.totalAmount.toFixed(2)}</p>
+                  <p>
+                    Pago elegido: {booking.paymentType === "deposit_50" ? "50%" : "100%"} | Pagado ahora: Bs{" "}
+                    {booking.amountDue.toFixed(2)}
+                  </p>
+                  {booking.totalAmount - booking.amountDue > 0 ? (
+                    <p>Saldo pendiente: Bs {(booking.totalAmount - booking.amountDue).toFixed(2)}</p>
+                  ) : null}
                   <p>WhatsApp: {booking.phone}</p>
                   <p>Referencia: {booking.paymentReference || "Sin referencia"}</p>
 
@@ -1997,10 +2127,13 @@ export default function AdminDashboard() {
                   <textarea
                     value={bookingNotes[booking.id] || ""}
                     onChange={(event) =>
-                      setBookingNotes((current) => ({
-                        ...current,
-                        [booking.id]: event.target.value,
-                      }))
+                      {
+                        dirtyBookingNoteIdsRef.current.add(booking.id)
+                        setBookingNotes((current) => ({
+                          ...current,
+                          [booking.id]: event.target.value,
+                        }))
+                      }
                     }
                     placeholder="Notas o motivo de rechazo"
                   />
@@ -2054,7 +2187,7 @@ export default function AdminDashboard() {
                     ) : null}
                   </div>
                 </article>
-              ))}
+              )) : null}
             </div>
           </section>
         ) : null}
@@ -2069,17 +2202,30 @@ export default function AdminDashboard() {
                   Mostrando todas las reservas. El filtro de fecha solo enfoca la vista, no limita el calendario.
                 </p>
               </div>
-              <div className="admin-view-toggle">
-                {(["day", "week", "month"] as CalendarViewMode[]).map((mode) => (
-                  <button
-                    key={mode}
-                    type="button"
-                    className={calendarViewMode === mode ? "is-active" : ""}
-                    onClick={() => setCalendarViewMode(mode)}
-                  >
-                    {mode === "day" ? "Dia" : mode === "week" ? "Semana" : "Mes"}
+              <div className="admin-calendar-toolbar">
+                <div className="admin-calendar-nav">
+                  <button type="button" className="btn-edit" onClick={() => shiftCalendarDate(-1)}>
+                    Anterior
                   </button>
-                ))}
+                  <button type="button" className="btn-approve" onClick={() => setSelectedDate(today)}>
+                    Hoy
+                  </button>
+                  <button type="button" className="btn-edit" onClick={() => shiftCalendarDate(1)}>
+                    Siguiente
+                  </button>
+                </div>
+                <div className="admin-view-toggle">
+                  {(["day", "week", "month"] as CalendarViewMode[]).map((mode) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      className={calendarViewMode === mode ? "is-active" : ""}
+                      onClick={() => setCalendarViewMode(mode)}
+                    >
+                      {mode === "day" ? "Dia" : mode === "week" ? "Semana" : "Mes"}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
 

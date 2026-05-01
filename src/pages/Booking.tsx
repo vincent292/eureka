@@ -9,6 +9,7 @@ import {
   validateDiscountCode,
   type BookingDurationPrice,
   type DiscountValidationResult,
+  type PaymentType,
   type PaymentQr,
   type ReservationChangeLookup,
 } from "../lib/bookingService"
@@ -26,9 +27,9 @@ const storageKey = "eureka_booking_draft"
 const paymentQrCacheKey = "eureka_active_payment_qrs"
 const fallbackDurations: BookingDurationPrice[] = [
   { id: "duration-60-1", label: "1 hora / 1 persona", durationMinutes: 60, personCount: 1, price: 30 },
-  { id: "duration-60-2", label: "1 hora / 2 personas", durationMinutes: 60, personCount: 2, price: 50 },
+  { id: "duration-60-2", label: "1 hora / desde 2 personas", durationMinutes: 60, personCount: 2, price: 25 },
   { id: "duration-180-1", label: "3 horas / 1 persona", durationMinutes: 180, personCount: 1, price: 40 },
-  { id: "duration-180-2", label: "3 horas / 2 personas", durationMinutes: 180, personCount: 2, price: 70 },
+  { id: "duration-180-2", label: "3 horas / desde 2 personas", durationMinutes: 180, personCount: 2, price: 35 },
 ]
 
 type BookingDraft = {
@@ -38,7 +39,9 @@ type BookingDraft = {
   date: string
   time: string
   pricingRuleId: string
+  partySize: number
   paymentReference: string
+  paymentType: PaymentType
   discountCode: string
   appliedDiscount: DiscountValidationResult | null
 }
@@ -55,7 +58,9 @@ const initialDraft: BookingDraft = {
   date: today,
   time: "17:00",
   pricingRuleId: "",
+  partySize: 1,
   paymentReference: "",
+  paymentType: "total",
   discountCode: "",
   appliedDiscount: null,
 }
@@ -66,6 +71,8 @@ const readDraft = () => {
     return {
       ...draft,
       date: draft.date && draft.date >= today ? draft.date : today,
+      partySize: Math.max(1, Number(draft.partySize) || 1),
+      paymentType: (draft.paymentType === "deposit_50" ? "deposit_50" : "total") as PaymentType,
     }
   } catch {
     return initialDraft
@@ -144,17 +151,24 @@ export default function Booking() {
     localStorage.setItem(storageKey, JSON.stringify(draft))
   }, [draft])
 
-  const selectedPackage = durationPrices.find((item) => item.id === draft.pricingRuleId) || durationPrices[0]
+  const selectedDuration = durationPrices.find((item) => item.id === draft.pricingRuleId) || durationPrices[0]
+  const selectedPackage =
+    durationPrices.find((item) =>
+      item.durationMinutes === selectedDuration?.durationMinutes &&
+      item.personCount === (draft.partySize === 1 ? 1 : 2)
+    ) || selectedDuration
   const selectedQr = paymentQrs.find((qr) => qr.id === selectedQrId) || null
   const selectedQrExpired = Boolean(
     selectedQr?.expiresAt && new Date(selectedQr.expiresAt).getTime() <= Date.now(),
   )
-  const subtotal = selectedPackage?.price || 0
+  const subtotal = selectedPackage ? selectedPackage.price * draft.partySize : 0
   const discountAmount = draft.appliedDiscount?.discountAmount || 0
   const total = draft.appliedDiscount?.total ?? subtotal
+  const amountToPay = draft.paymentType === "deposit_50" ? total / 2 : total
+  const balanceDue = Math.max(total - amountToPay, 0)
 
   const canContinueFromStepOne = draft.fullName.trim() && draft.phone.replace(/\D/g, "").length >= 7 && draft.nationalId.trim()
-  const canContinueFromStepTwo = draft.date && draft.time && selectedPackage
+  const canContinueFromStepTwo = draft.date && draft.time && selectedPackage && draft.partySize > 0
 
   useEffect(() => {
     if (!selectedQr?.imagePath) return
@@ -167,12 +181,17 @@ export default function Booking() {
     () => [
       ["Fecha", draft.date],
       ["Hora", draft.time],
-      ["Paquete", selectedPackage?.label || "-"],
+      ["Duracion", selectedPackage ? `${selectedPackage.durationMinutes / 60} hora${selectedPackage.durationMinutes === 60 ? "" : "s"}` : "-"],
+      ["Personas", String(draft.partySize)],
+      ["Precio por persona", selectedPackage ? `Bs ${selectedPackage.price.toFixed(2)}` : "-"],
       ["Subtotal", `Bs ${subtotal.toFixed(2)}`],
       ["Descuento", discountAmount > 0 ? `- Bs ${discountAmount.toFixed(2)}` : "Bs 0.00"],
-      ["Total a pagar", `Bs ${total.toFixed(2)}`],
+      ["Total reserva", `Bs ${total.toFixed(2)}`],
+      ["Pago elegido", draft.paymentType === "deposit_50" ? "50% ahora" : "100% ahora"],
+      ["Saldo", `Bs ${balanceDue.toFixed(2)}`],
+      ["Total a pagar", `Bs ${amountToPay.toFixed(2)}`],
     ],
-    [discountAmount, draft.date, draft.time, selectedPackage?.label, subtotal, total],
+    [amountToPay, balanceDue, discountAmount, draft.date, draft.partySize, draft.paymentType, draft.time, selectedPackage, subtotal, total],
   )
 
   const updateDraft = (patch: Partial<BookingDraft>) => {
@@ -210,7 +229,7 @@ export default function Booking() {
     setErrorMessage("")
 
     try {
-      const result = await validateDiscountCode(draft.discountCode, selectedPackage.id)
+      const result = await validateDiscountCode(draft.discountCode, selectedPackage.id, draft.partySize)
       updateDraft({ discountCode: result.code, appliedDiscount: result })
       setDiscountMessage(`${result.message}: - Bs ${result.discountAmount.toFixed(2)}`)
     } catch (error) {
@@ -348,7 +367,8 @@ export default function Booking() {
         durationMinutes: selectedPackage.durationMinutes,
         pricingRuleId: selectedPackage.id,
         paymentQrId: selectedQrId,
-        partySize: selectedPackage.personCount,
+        paymentType: draft.paymentType,
+        partySize: draft.partySize,
         paymentReference: draft.paymentReference,
         discountCode: draft.appliedDiscount?.code || "",
         paymentProof,
@@ -471,11 +491,15 @@ export default function Booking() {
               </div>
 
               <div className="booking-segment booking-segment--auto">
-                {durationPrices.map((duration) => (
+                {durationPrices
+                  .filter((duration, index, allDurations) =>
+                    allDurations.findIndex((item) => item.durationMinutes === duration.durationMinutes) === index
+                  )
+                  .map((duration) => (
                   <button
                     key={duration.id}
                     type="button"
-                    className={draft.pricingRuleId === duration.id ? "active" : ""}
+                    className={selectedPackage?.durationMinutes === duration.durationMinutes ? "active" : ""}
                     onClick={() =>
                       updateDraft({
                         pricingRuleId: duration.id,
@@ -484,14 +508,36 @@ export default function Booking() {
                       })
                     }
                   >
-                    {duration.label}
-                    <span>Bs {duration.price.toFixed(2)}</span>
+                    {duration.durationMinutes / 60} hora{duration.durationMinutes === 60 ? "" : "s"}
+                    <span>{duration.durationMinutes === 60 ? "60 min" : "180 min"}</span>
                   </button>
                 ))}
               </div>
 
+              <label className="booking-party-size">
+                Personas
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={draft.partySize}
+                  onChange={(event) =>
+                    updateDraft({
+                      partySize: Math.max(1, Number(event.target.value) || 1),
+                      appliedDiscount: null,
+                      discountCode: "",
+                    })
+                  }
+                />
+                <small>
+                  {draft.partySize === 1
+                    ? `1 persona: Bs ${(selectedPackage?.price || 0).toFixed(2)}`
+                    : `Desde 2 personas: Bs ${(selectedPackage?.price || 0).toFixed(2)} por persona`}
+                </small>
+              </label>
+
               <div className="booking-summary">
-                {summaryRows.slice(0, 4).map(([label, value]) => (
+                {summaryRows.slice(0, 6).map(([label, value]) => (
                   <p key={label}>
                     <span>{label}</span>
                     <strong>{value}</strong>
@@ -527,6 +573,32 @@ export default function Booking() {
                 ))}
               </div>
 
+              <div className="booking-payment-choice">
+                <strong>Cuanto quieres pagar ahora?</strong>
+                <div className="booking-segment">
+                  <button
+                    type="button"
+                    className={draft.paymentType === "total" ? "active" : ""}
+                    onClick={() => updateDraft({ paymentType: "total" })}
+                  >
+                    100%
+                    <span>Bs {total.toFixed(2)}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={draft.paymentType === "deposit_50" ? "active" : ""}
+                    onClick={() => updateDraft({ paymentType: "deposit_50" })}
+                  >
+                    50%
+                    <span>Bs {amountToPay.toFixed(2)}</span>
+                  </button>
+                </div>
+                <p>
+                  Total a pagar: <strong>Bs {amountToPay.toFixed(2)}</strong>
+                  {balanceDue > 0 ? <span> Saldo: Bs {balanceDue.toFixed(2)}</span> : null}
+                </p>
+              </div>
+
               {selectedQr && !selectedQrExpired ? (
                 <div className="booking-qr">
                   <img
@@ -538,7 +610,7 @@ export default function Booking() {
                   />
                   <div>
                     <strong>{selectedQr.label}</strong>
-                    <span>Total final a pagar: Bs {total.toFixed(2)}</span>
+                    <span>Total a pagar ahora: Bs {amountToPay.toFixed(2)}</span>
                     <p>
                       Escanea el QR y paga el monto exacto indicado. Luego sube tu comprobante
                       de pago o ingresa la referencia para que podamos verificar tu reserva.
