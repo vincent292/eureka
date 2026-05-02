@@ -1000,9 +1000,20 @@
 }
 
 .status-pill--confirmed,
+.status-pill--paid,
 .calendar-booking--confirmed {
   background: rgba(215, 236, 153, 0.38);
   color: #466630;
+}
+
+.status-pill--in_game {
+  background: rgba(39, 65, 40, 0.16);
+  color: #274128;
+}
+
+.status-pill--completed {
+  background: rgba(16, 33, 37, 0.08);
+  color: #58676b;
 }
 
 .status-pill--rejected,
@@ -1018,6 +1029,7 @@
 }
 
 .status-pill--expired,
+.status-pill--no_show,
 .status-pill--cancelled {
   background: rgba(16, 33, 37, 0.08);
   color: #58676b;

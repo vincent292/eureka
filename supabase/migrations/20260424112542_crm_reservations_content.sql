@@ -214,6 +214,8 @@ create table if not exists public.booking_duration_prices (
   updated_at timestamptz not null default now()
 );
 
+
+
 create index if not exists booking_duration_prices_active_order_idx
 on public.booking_duration_prices (is_active, sort_order, duration_minutes);
 

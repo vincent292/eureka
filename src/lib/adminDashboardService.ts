@@ -5,6 +5,10 @@ export type AdminBookingStatus =
   | "pending_payment"
   | "pendiente_verificacion"
   | "confirmed"
+  | "paid"
+  | "in_game"
+  | "completed"
+  | "no_show"
   | "rejected"
   | "cancelled"
   | "expired"
@@ -32,6 +36,13 @@ export interface AdminBooking {
   paymentReceiptMimeType: string | null
   paymentReceiptSize: number | null
   proofDeletedAt: string | null
+  paymentStatus: "pending" | "paid" | "rejected" | "cancelled"
+  paidAt: string | null
+  paymentMethod: "cash" | "qr" | "card" | "transfer" | "other" | null
+  cashSessionId: string | null
+  startedAt: string | null
+  finishedAt: string | null
+  durationPlayedMinutes: number | null
   adminNotes: string | null
   rejectionReason: string | null
   createdAt: string
@@ -349,6 +360,13 @@ type AdminBookingRow = {
   payment_receipt_mime_type: string | null
   payment_receipt_size: number | null
   proof_deleted_at: string | null
+  payment_status: "pending" | "paid" | "rejected" | "cancelled"
+  paid_at: string | null
+  payment_method: "cash" | "qr" | "card" | "transfer" | "other" | null
+  cash_session_id: string | null
+  started_at: string | null
+  finished_at: string | null
+  duration_played_minutes: number | null
   admin_notes: string | null
   rejection_reason: string | null
   created_at: string
@@ -604,7 +622,7 @@ export async function fetchAdminBookings(date?: string) {
   let query = supabase
     .from("bookings")
     .select(
-      "id, reservation_code, full_name, phone, national_id, duration_minutes, party_size, starts_at, ends_at, status, payment_type, total_amount, amount_due, discount_amount, payment_reference, payment_receipt_path, payment_receipt_original_name, payment_receipt_mime_type, payment_receipt_size, proof_deleted_at, admin_notes, rejection_reason, created_at, discount_tokens(code), booking_duration_prices(label)",
+      "id, reservation_code, full_name, phone, national_id, duration_minutes, party_size, starts_at, ends_at, status, payment_type, total_amount, amount_due, discount_amount, payment_reference, payment_receipt_path, payment_receipt_original_name, payment_receipt_mime_type, payment_receipt_size, proof_deleted_at, payment_status, paid_at, payment_method, cash_session_id, started_at, finished_at, duration_played_minutes, admin_notes, rejection_reason, created_at, discount_tokens(code), booking_duration_prices(label)",
     )
     .order("starts_at", { ascending: true })
 
@@ -644,6 +662,13 @@ export async function fetchAdminBookings(date?: string) {
     paymentReceiptMimeType: booking.payment_receipt_mime_type,
     paymentReceiptSize: booking.payment_receipt_size,
     proofDeletedAt: booking.proof_deleted_at,
+    paymentStatus: booking.payment_status || "pending",
+    paidAt: booking.paid_at,
+    paymentMethod: booking.payment_method,
+    cashSessionId: booking.cash_session_id,
+    startedAt: booking.started_at,
+    finishedAt: booking.finished_at,
+    durationPlayedMinutes: booking.duration_played_minutes,
     adminNotes: booking.admin_notes,
     rejectionReason: booking.rejection_reason,
     createdAt: booking.created_at,

@@ -4,6 +4,7 @@ import {
   FaBell,
   FaCalendarAlt,
   FaBoxes,
+  FaCashRegister,
   FaClipboardList,
   FaDownload,
   FaEdit,
@@ -24,6 +25,7 @@ import {
 } from "react-icons/fa"
 import { useNavigate } from "react-router-dom"
 import InventoryPanel from "../components/InventoryPanel"
+import CashRegisterPanel from "../components/CashRegisterPanel"
 import {
   fetchAdminBookings,
   fetchAdminDiscountTokens,
@@ -163,6 +165,7 @@ type AdminSection =
   | "products"
   | "tables"
   | "orders"
+  | "cash"
   | "inventory"
   | "landing"
   | "novelties"
@@ -184,6 +187,7 @@ const adminSections: Array<{
   { id: "products", label: "Productos", icon: FaClipboardList },
   { id: "tables", label: "Mesas", icon: FaQrcode },
   { id: "orders", label: "Pedidos en vivo", icon: FaBell },
+  { id: "cash", label: "Caja", icon: FaCashRegister },
   { id: "inventory", label: "Inventario", icon: FaBoxes },
   { id: "landing", label: "Landing", icon: FaHome },
   { id: "novelties", label: "Novedades", icon: FaTags },
@@ -351,6 +355,10 @@ const statusLabels: Record<AdminBooking["status"], string> = {
   pending_payment: "Pendiente pago",
   pendiente_verificacion: "Pendiente verificacion",
   confirmed: "Confirmada",
+  paid: "Pagada",
+  in_game: "En juego",
+  completed: "Finalizada",
+  no_show: "No asistio",
   rejected: "Rechazada",
   cancelled: "Cancelada",
   expired: "Expirada",
@@ -3004,6 +3012,21 @@ export default function AdminDashboard() {
                 )
               })}
             </div>
+          </section>
+        ) : null}
+
+        {!loading && activeSection === "cash" ? (
+          <section className="admin-content">
+            <CashRegisterPanel
+              products={products}
+              productCategories={productCategories}
+              bookings={calendarBookings}
+              liveOrders={liveOrders}
+              paymentQrs={paymentQrs}
+              isSuperAdmin={isSuperAdmin}
+              onRefresh={() => loadDashboard(selectedDate, false)}
+              setSaveMessage={setSaveMessage}
+            />
           </section>
         ) : null}
 

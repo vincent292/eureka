@@ -1,3 +1,36 @@
+alter table public.booking_duration_prices
+add column if not exists person_count integer not null default 1;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'booking_duration_prices_person_count_positive'
+  ) then
+    alter table public.booking_duration_prices
+    add constraint booking_duration_prices_person_count_positive
+    check (person_count > 0);
+  end if;
+end $$;
+
+alter table public.booking_duration_prices
+drop constraint if exists booking_duration_prices_duration_minutes_key;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'booking_duration_prices_duration_person_unique'
+  ) then
+    alter table public.booking_duration_prices
+    add constraint booking_duration_prices_duration_person_unique
+    unique (duration_minutes, person_count);
+  end if;
+end $$;
+
+
 update public.booking_duration_prices
 set label = '1 hora / 1 persona',
     price = 30,
