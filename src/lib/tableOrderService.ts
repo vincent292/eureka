@@ -83,6 +83,9 @@ export interface CreateTableOrderInput {
   customerPhone: string
   paymentMethod: MenuPaymentMethod
   paymentReceiptPath: string | null
+  invoiceRequired?: boolean
+  invoiceDocument?: string | null
+  invoiceName?: string | null
   items: CreateTableOrderItem[]
 }
 
@@ -333,6 +336,9 @@ export async function createTableOrder(input: CreateTableOrderInput) {
     p_customer_phone: input.customerPhone,
     p_payment_method: input.paymentMethod,
     p_payment_receipt_path: input.paymentReceiptPath,
+    p_invoice_required: input.invoiceRequired ?? false,
+    p_invoice_document: input.invoiceDocument || null,
+    p_invoice_name: input.invoiceName || null,
     p_items: input.items.map((item) => ({
       product_id: item.productId,
       variant_id: item.variantId,

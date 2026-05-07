@@ -616,6 +616,9 @@ export async function createPosSale(input: {
   discountAmount: number
   paymentMethod: CashPaymentMethod
   receiptImagePath?: string | null
+  invoiceRequired?: boolean
+  invoiceDocument?: string | null
+  invoiceName?: string | null
   notes?: string
   items: PosSaleInputItem[]
 }) {
@@ -625,6 +628,9 @@ export async function createPosSale(input: {
     p_discount_amount: input.discountAmount,
     p_payment_method: input.paymentMethod,
     p_receipt_image_path: input.receiptImagePath || null,
+    p_invoice_required: input.invoiceRequired ?? false,
+    p_invoice_document: input.invoiceDocument || null,
+    p_invoice_name: input.invoiceName || null,
     p_notes: input.notes || null,
     p_items: input.items.map((item) => ({
       product_id: item.productId,

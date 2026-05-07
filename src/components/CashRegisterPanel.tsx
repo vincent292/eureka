@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { FaCashRegister, FaDownload, FaPlay, FaPrint, FaQrcode, FaSearch, FaStop, FaTimes } from "react-icons/fa"
+import { FaCashRegister, FaDownload, FaPlay, FaPrint, FaQrcode, FaSearch, FaShoppingCart, FaStop, FaTimes } from "react-icons/fa"
 import jsPDF from "jspdf"
 import {
   cancelCashMovement,
@@ -80,6 +80,14 @@ type GamePaymentDraft = {
   file: File | null
 }
 
+type PosProductDraft = {
+  product: AdminProduct
+  variantId: string | null
+  optionIds: string[]
+  quantity: number
+  notes: string
+}
+
 type Props = {
   products: AdminProduct[]
   productCategories: AdminProductCategory[]
@@ -107,6 +115,9 @@ const tabs: Array<{ id: CashTab; label: string }> = [
 
 const money = (value: number | null | undefined) =>
   `${Number(value || 0).toLocaleString("es-BO", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Bs.`
+
+const moneyLead = (value: number | null | undefined) =>
+  `Bs ${Number(value || 0).toLocaleString("es-BO", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
 const dateTime = (value: string | null | undefined) =>
   value ? new Date(value).toLocaleString("es-BO", { dateStyle: "short", timeStyle: "short" }) : "-"
@@ -175,9 +186,19 @@ export default function CashRegisterPanel({
   const [posSearch, setPosSearch] = useState("")
   const [posCategory, setPosCategory] = useState("all")
   const [cart, setCart] = useState<CartItem[]>([])
-  const [posForm, setPosForm] = useState({ customerName: "", customerPhone: "", discount: "0", method: "cash" as CashPaymentMethod, notes: "" })
+  const [posForm, setPosForm] = useState({
+    customerName: "",
+    customerPhone: "",
+    discount: "0",
+    method: "cash" as CashPaymentMethod,
+    notes: "",
+    invoiceRequired: false,
+    invoiceDocument: "",
+    invoiceName: "",
+  })
   const [posReceipt, setPosReceipt] = useState<File | null>(null)
   const [posCartOpen, setPosCartOpen] = useState(false)
+  const [posProductDraft, setPosProductDraft] = useState<PosProductDraft | null>(null)
   const [reservationSearch, setReservationSearch] = useState("")
   const [selectedReservationId, setSelectedReservationId] = useState("")
   const [reservationPaymentMethod, setReservationPaymentMethod] = useState<CashPaymentMethod>("cash")
@@ -260,6 +281,11 @@ export default function CashRegisterPanel({
       setPosCartOpen(false)
     }
   }, [activeTab])
+
+  useEffect(() => {
+    document.body.classList.toggle("cash-cart-lock", activeTab === "pos" && posCartOpen)
+    return () => document.body.classList.remove("cash-cart-lock")
+  }, [activeTab, posCartOpen])
 
   const refreshAll = async (message: string) => {
     await loadCash()
@@ -364,22 +390,70 @@ export default function CashRegisterPanel({
   const cartDiscount = Math.min(Number(posForm.discount || 0), cartSubtotal)
   const cartTotal = Math.max(cartSubtotal - cartDiscount, 0)
 
-  const addToCart = (product: AdminProduct) => {
+  const openPosProduct = (product: AdminProduct) => {
+    setPosProductDraft({
+      product,
+      variantId: product.variants.find((variant) => variant.isActive)?.id || null,
+      optionIds: [],
+      quantity: 1,
+      notes: "",
+    })
+  }
+
+  const addToCart = (draft: PosProductDraft) => {
     setCart((current) => [
       ...current,
       {
-        key: `${product.id}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-        productId: product.id,
-        variantId: product.variants[0]?.id || null,
-        optionIds: [],
-        quantity: 1,
-        notes: "",
+        key: `${draft.product.id}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        productId: draft.product.id,
+        variantId: draft.variantId,
+        optionIds: draft.optionIds,
+        quantity: draft.quantity,
+        notes: draft.notes,
       },
     ])
+    setPosProductDraft(null)
+    setPosCartOpen(true)
   }
 
   const updateCartItem = (key: string, patch: Partial<CartItem>) => {
     setCart((current) => current.map((item) => (item.key === key ? { ...item, ...patch } : item)))
+  }
+
+  const togglePosDraftOption = (groupId: string, optionId: string, checked: boolean) => {
+    setPosProductDraft((current) => {
+      if (!current) return current
+
+      const group = current.product.optionGroups.find((item) => item.id === groupId)
+      if (!group) return current
+
+      const groupOptionIds = group.options.map((option) => option.id)
+      const withoutGroupOptions = current.optionIds.filter((id) => !groupOptionIds.includes(id))
+
+      if (!checked) {
+        return {
+          ...current,
+          optionIds: current.optionIds.filter((id) => id !== optionId),
+        }
+      }
+
+      if (group.selectionType === "single") {
+        return {
+          ...current,
+          optionIds: [...withoutGroupOptions, optionId],
+        }
+      }
+
+      const selectedInGroup = current.optionIds.filter((id) => groupOptionIds.includes(id))
+      if (group.maxSelect > 0 && selectedInGroup.length >= group.maxSelect) {
+        return current
+      }
+
+      return {
+        ...current,
+        optionIds: [...current.optionIds, optionId],
+      }
+    })
   }
 
   const requireOpenCash = () => {
@@ -455,6 +529,10 @@ export default function CashRegisterPanel({
       setSaveMessage("Agrega productos al carrito.")
       return
     }
+    if (posForm.invoiceRequired && (!posForm.invoiceDocument.trim() || !posForm.invoiceName.trim())) {
+      setSaveMessage("Completa NIT/CI y nombre para la factura.")
+      return
+    }
     runAction(async () => {
       const receiptPath = posForm.method === "qr" && posReceipt ? await uploadCashReceipt(posReceipt) : null
       if (posForm.method === "qr" && !receiptPath) throw new Error("Sube el comprobante QR.")
@@ -464,6 +542,9 @@ export default function CashRegisterPanel({
         discountAmount: Number(posForm.discount || 0),
         paymentMethod: posForm.method,
         receiptImagePath: receiptPath,
+        invoiceRequired: posForm.invoiceRequired,
+        invoiceDocument: posForm.invoiceDocument,
+        invoiceName: posForm.invoiceName,
         notes: posForm.notes,
         items: cart.map((item) => ({
           productId: item.productId,
@@ -475,7 +556,17 @@ export default function CashRegisterPanel({
       })
       setCart([])
       setPosReceipt(null)
-      setPosForm({ customerName: "", customerPhone: "", discount: "0", method: "cash", notes: "" })
+      setPosCartOpen(false)
+      setPosForm({
+        customerName: "",
+        customerPhone: "",
+        discount: "0",
+        method: "cash",
+        notes: "",
+        invoiceRequired: false,
+        invoiceDocument: "",
+        invoiceName: "",
+      })
     }, "Venta directa registrada.")
   }
 
@@ -772,7 +863,7 @@ export default function CashRegisterPanel({
   }
 
   const exportTableOrdersCsv = () => {
-    const header = ["Mesa", "Pedido", "Cliente", "Estado pedido", "Estado pago", "Metodo", "Total"]
+    const header = ["Mesa", "Pedido", "Cliente", "Estado pedido", "Estado pago", "Metodo", "Factura", "NIT/CI", "Nombre factura", "Total"]
     const rows = ordersByTable.flatMap((table) =>
       table.orders.map((order) => [
         table.tableLabel,
@@ -781,6 +872,9 @@ export default function CashRegisterPanel({
         order.orderStatus,
         order.paymentStatus,
         paymentLabels[order.paymentMethod],
+        order.invoiceRequired ? "Si" : "No",
+        order.invoiceDocument || "",
+        order.invoiceName || "",
         order.total,
       ]),
     )
@@ -897,7 +991,7 @@ export default function CashRegisterPanel({
 
       {activeTab === "pos" ? (
         <div className="cash-pos">
-          <section className="admin-panel-card">
+          <section className="admin-panel-card cash-pos-products">
             <div className="cash-form-grid cash-form-grid--tools">
               <div className="cash-search"><FaSearch /><input placeholder="Buscar producto" value={posSearch} onChange={(event) => setPosSearch(event.target.value)} /></div>
               <select value={posCategory} onChange={(event) => setPosCategory(event.target.value)}>
@@ -909,7 +1003,7 @@ export default function CashRegisterPanel({
             </div>
             <div className="cash-product-grid">
               {filteredProducts.map((product) => (
-                <button key={product.id} type="button" className="cash-product-tile" onClick={() => addToCart(product)}>
+                <button key={product.id} type="button" className="cash-product-tile" onClick={() => openPosProduct(product)}>
                   <img src={resolveCatalogImage(product.imagePath)} alt={product.name} />
                   <strong>{product.name}</strong>
                   <em>{money(product.variants[0]?.price ?? product.basePrice)}</em>
@@ -919,12 +1013,9 @@ export default function CashRegisterPanel({
           </section>
 
           <aside className={`admin-panel-card cash-cart ${posCartOpen ? "is-open" : ""}`}>
-            <div className="admin-card-toolbar">
-              <strong>Carrito</strong>
-              <div className="admin-inline-actions">
-                <span>{cart.length} item(s)</span>
-                <button type="button" className="cash-cart-close" onClick={() => setPosCartOpen(false)}><FaTimes /></button>
-              </div>
+            <div className="cash-cart-header">
+              <h2>Tu pedido</h2>
+              <button type="button" className="cash-cart-close" onClick={() => setPosCartOpen(false)} aria-label="Cerrar pedido"><FaTimes /></button>
             </div>
             {cartDetails.length === 0 ? <p className="admin-template-help">Agrega productos para iniciar la venta.</p> : null}
             {cartDetails.map(({ item, product, variant, options, total }) => (
@@ -933,38 +1024,15 @@ export default function CashRegisterPanel({
                   <strong>{product?.name || "Producto"}</strong>
                   <button type="button" onClick={() => setCart((current) => current.filter((row) => row.key !== item.key))}><FaTimes /></button>
                 </div>
-                {product && product.variants.length > 0 ? (
-                  <select value={variant?.id || ""} onChange={(event) => updateCartItem(item.key, { variantId: event.target.value || null })}>
-                    {product.variants.filter((nextVariant) => nextVariant.isActive).map((nextVariant) => (
-                      <option key={nextVariant.id} value={nextVariant.id}>{nextVariant.name} - {money(nextVariant.price)}</option>
-                    ))}
-                  </select>
-                ) : null}
-                {product?.optionGroups.filter((group) => group.isActive).map((group) => (
-                  <div key={group.id} className="cash-options">
-                    <span>{group.name}</span>
-                    {group.options.filter((option) => option.isActive).map((option) => (
-                      <label key={option.id}>
-                        <input
-                          type="checkbox"
-                          checked={item.optionIds.includes(option.id)}
-                          onChange={(event) => {
-                            const nextOptions = event.target.checked
-                              ? [...item.optionIds, option.id]
-                              : item.optionIds.filter((optionId) => optionId !== option.id)
-                            updateCartItem(item.key, { optionIds: nextOptions })
-                          }}
-                        />
-                        {option.name} {option.extraPrice > 0 ? `+${money(option.extraPrice)}` : ""}
-                      </label>
-                    ))}
-                  </div>
-                ))}
+                <div className="cash-cart-item__meta">
+                  {variant ? <span>{variant.name} - {money(variant.price)}</span> : null}
+                  {options.length > 0 ? <span>{options.map((option) => option.name).join(", ")}</span> : null}
+                  {item.notes ? <small>{item.notes}</small> : null}
+                </div>
                 <div className="cash-cart-item__qty">
                   <input type="number" min="1" value={item.quantity} onChange={(event) => updateCartItem(item.key, { quantity: Math.max(1, Number(event.target.value || 1)) })} />
                   <strong>{money(total)}</strong>
                 </div>
-                {options.length > 0 ? <small>{options.map((option) => option.name).join(", ")}</small> : null}
               </article>
             ))}
             <div className="cash-total-box">
@@ -972,22 +1040,55 @@ export default function CashRegisterPanel({
               <label>Descuento<input type="number" min="0" step="0.5" value={posForm.discount} onChange={(event) => setPosForm({ ...posForm, discount: event.target.value })} /></label>
               <span>Total <strong>{money(cartTotal)}</strong></span>
             </div>
-            <div className="cash-form-grid">
+            <div className="cash-form-grid cash-form-grid--pair">
               <input placeholder="Cliente opcional" value={posForm.customerName} onChange={(event) => setPosForm({ ...posForm, customerName: event.target.value })} />
               <input placeholder="Telefono opcional" value={posForm.customerPhone} onChange={(event) => setPosForm({ ...posForm, customerPhone: event.target.value })} />
-              <select value={posForm.method} onChange={(event) => setPosForm({ ...posForm, method: event.target.value as CashPaymentMethod })}>
-                <option value="cash">Efectivo</option>
-                <option value="qr">QR</option>
-              </select>
             </div>
+            <div className="cash-payment-toggle">
+              <button type="button" className={posForm.method === "cash" ? "is-active" : ""} onClick={() => setPosForm({ ...posForm, method: "cash" })}>
+                Caja / efectivo
+              </button>
+              <button type="button" className={posForm.method === "qr" ? "is-active" : ""} onClick={() => setPosForm({ ...posForm, method: "qr" })}>
+                Pago QR
+              </button>
+            </div>
+            <label className="cash-invoice-toggle">
+              <span>¿Requiere factura?</span>
+              <input
+                type="checkbox"
+                checked={posForm.invoiceRequired}
+                onChange={(event) => {
+                  const checked = event.target.checked
+                  setPosForm({
+                    ...posForm,
+                    invoiceRequired: checked,
+                    invoiceDocument: checked ? posForm.invoiceDocument : "",
+                    invoiceName: checked ? posForm.invoiceName : "",
+                  })
+                }}
+              />
+            </label>
+            {posForm.invoiceRequired ? (
+              <div className="cash-invoice-fields">
+                <label>NIT / CI<input value={posForm.invoiceDocument} onChange={(event) => setPosForm({ ...posForm, invoiceDocument: event.target.value })} /></label>
+                <label>Nombre o razon social<input value={posForm.invoiceName} onChange={(event) => setPosForm({ ...posForm, invoiceName: event.target.value })} /></label>
+              </div>
+            ) : null}
             {posForm.method === "qr" ? <QrPaymentBlock qr={activePaymentQr} file={posReceipt} setFile={setPosReceipt} /> : null}
             <textarea placeholder="Nota opcional" value={posForm.notes} onChange={(event) => setPosForm({ ...posForm, notes: event.target.value })} />
-            <button type="button" className="btn-approve" onClick={handlePosSale} disabled={working || !isCashOpen}>Confirmar venta</button>
+            <button type="button" className="table-submit cash-submit" onClick={handlePosSale} disabled={working || !isCashOpen}>
+              {working ? "Procesando..." : "Confirmar pedido"}
+            </button>
           </aside>
-          {posCartOpen ? <button type="button" className="cash-cart-backdrop" onClick={() => setPosCartOpen(false)} aria-label="Cerrar carrito" /> : null}
-          <button type="button" className="cash-mobile-cart-button" onClick={() => setPosCartOpen(true)}>
-            <span>Carrito ({cart.length})</span>
-            <strong>{money(cartTotal)}</strong>
+          {posCartOpen ? <button type="button" className="cash-cart-backdrop" onClick={() => setPosCartOpen(false)} aria-label="Cerrar pedido" /> : null}
+          <button
+            type="button"
+            className={`cash-mobile-cart-button ${posCartOpen || posProductDraft ? "is-hidden" : ""}`}
+            onClick={() => setPosCartOpen(true)}
+            aria-label="Ver pedido"
+          >
+            <span><FaShoppingCart /> Pedido ({cart.reduce((sum, item) => sum + item.quantity, 0)})</span>
+            <strong>{moneyLead(cartTotal)}</strong>
           </button>
         </div>
       ) : null}
@@ -1179,6 +1280,11 @@ export default function CashRegisterPanel({
                     <span>{order.paymentStatus}</span>
                     <span>{order.orderStatus}</span>
                   </div>
+                  {order.invoiceRequired ? (
+                    <p className="cash-invoice-summary">
+                      Factura: {order.invoiceDocument || "-"} | {order.invoiceName || "-"}
+                    </p>
+                  ) : null}
                   {order.receipts.filter((receipt) => !receipt.isDeleted).map((receipt) => (
                     <a key={receipt.id} className="admin-proof-link" href={receipt.imagePath} target="_blank" rel="noreferrer">Ver comprobante</a>
                   ))}
@@ -1472,6 +1578,80 @@ export default function CashRegisterPanel({
                 <button type="button" className="btn-reject" onClick={() => setOpeningModalOpen(false)}>Cancelar</button>
                 <button type="button" className="btn-approve" onClick={handleOpenCash} disabled={working}><FaCashRegister />Abrir caja</button>
               </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {posProductDraft ? (
+        <div className="admin-modal">
+          <div className="admin-modal-card cash-pos-product-modal">
+            <div className="admin-modal-head">
+              <div>
+                <span className="admin-kicker">Venta rapida</span>
+                <h2>{posProductDraft.product.name}</h2>
+              </div>
+              <button type="button" className="admin-modal-close" onClick={() => setPosProductDraft(null)}><FaTimes /></button>
+            </div>
+            <div className="cash-pos-product-preview">
+              <img src={resolveCatalogImage(posProductDraft.product.imagePath)} alt={posProductDraft.product.name} />
+              <div>
+                <strong>{money(posProductDraft.product.variants.find((variant) => variant.id === posProductDraft.variantId)?.price ?? posProductDraft.product.basePrice)}</strong>
+                <span>{posProductDraft.product.description || "Producto para venta directa."}</span>
+              </div>
+            </div>
+            <div className="admin-modal-form">
+              {posProductDraft.product.variants.filter((variant) => variant.isActive).length > 0 ? (
+                <label>Variante
+                  <select
+                    value={posProductDraft.variantId || ""}
+                    onChange={(event) => setPosProductDraft({ ...posProductDraft, variantId: event.target.value || null })}
+                  >
+                    {posProductDraft.product.variants.filter((variant) => variant.isActive).map((variant) => (
+                      <option key={variant.id} value={variant.id}>{variant.name} - {money(variant.price)}</option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+
+              {posProductDraft.product.optionGroups.filter((group) => group.isActive).map((group) => (
+                <div key={group.id} className="cash-pos-option-group">
+                  <strong>{group.name}</strong>
+                  {group.options.filter((option) => option.isActive).map((option) => (
+                    <label key={option.id}>
+                      <input
+                        type={group.selectionType === "single" ? "radio" : "checkbox"}
+                        name={`pos-option-${group.id}`}
+                        checked={posProductDraft.optionIds.includes(option.id)}
+                        onChange={(event) => togglePosDraftOption(group.id, option.id, event.target.checked)}
+                      />
+                      {option.name} {option.extraPrice > 0 ? `+${money(option.extraPrice)}` : ""}
+                    </label>
+                  ))}
+                </div>
+              ))}
+
+              <div className="cash-pos-quantity">
+                <button
+                  type="button"
+                  onClick={() => setPosProductDraft({ ...posProductDraft, quantity: Math.max(1, posProductDraft.quantity - 1) })}
+                >
+                  -
+                </button>
+                <strong>{posProductDraft.quantity}</strong>
+                <button
+                  type="button"
+                  onClick={() => setPosProductDraft({ ...posProductDraft, quantity: posProductDraft.quantity + 1 })}
+                >
+                  +
+                </button>
+              </div>
+              <label>Nota
+                <textarea value={posProductDraft.notes} onChange={(event) => setPosProductDraft({ ...posProductDraft, notes: event.target.value })} />
+              </label>
+              <button type="button" className="btn-approve" onClick={() => addToCart(posProductDraft)}>
+                Agregar al carrito
+              </button>
             </div>
           </div>
         </div>

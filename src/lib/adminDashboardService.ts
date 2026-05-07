@@ -235,6 +235,9 @@ export interface AdminLiveOrder {
   tableName: string | null
   customerName: string
   customerPhone: string
+  invoiceRequired: boolean
+  invoiceDocument: string | null
+  invoiceName: string | null
   paymentMethod: "qr" | "cash"
   paymentStatus: AdminPaymentStatus
   orderStatus: AdminOrderStatus
@@ -530,6 +533,9 @@ type AdminOrderRow = {
   table_id: string
   customer_name: string
   customer_phone: string
+  invoice_required: boolean | null
+  invoice_document: string | null
+  invoice_name: string | null
   payment_method: "qr" | "cash"
   payment_status: AdminPaymentStatus
   order_status: AdminOrderStatus
@@ -1652,7 +1658,7 @@ export async function deleteRestaurantTable(id: string) {
 export async function fetchAdminLiveOrders() {
   const ordersResult = await supabase
     .from("orders")
-    .select("id, order_code, table_id, customer_name, customer_phone, payment_method, payment_status, order_status, subtotal, total, rejection_reason, accepted_at, rejected_at, prepared_at, delivered_at, created_at, restaurant_tables(table_number, table_name)")
+    .select("id, order_code, table_id, customer_name, customer_phone, invoice_required, invoice_document, invoice_name, payment_method, payment_status, order_status, subtotal, total, rejection_reason, accepted_at, rejected_at, prepared_at, delivered_at, created_at, restaurant_tables(table_number, table_name)")
     .order("created_at", { ascending: false })
     .limit(80)
 
@@ -1742,6 +1748,9 @@ export async function fetchAdminLiveOrders() {
       tableName: table?.table_name || null,
       customerName: order.customer_name,
       customerPhone: order.customer_phone,
+      invoiceRequired: Boolean(order.invoice_required),
+      invoiceDocument: order.invoice_document,
+      invoiceName: order.invoice_name,
       paymentMethod: order.payment_method,
       paymentStatus: order.payment_status,
       orderStatus: order.order_status,
