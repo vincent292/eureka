@@ -104,6 +104,38 @@ export interface ClosureReport {
   reportSnapshot: Record<string, unknown>
 }
 
+export interface CashGameTemplate {
+  id: string
+  name: string
+  slug: string
+  defaultPrice: number
+  defaultPartySize: number
+  sortOrder: number
+  isActive: boolean
+}
+
+export interface WalkInGame {
+  id: string
+  cashSessionId: string
+  gameTemplateId: string | null
+  gameName: string
+  customerName: string | null
+  customerPhone: string | null
+  partySize: number
+  price: number
+  paymentMethod: CashPaymentMethod | null
+  paymentStatus: "pending" | "paid" | "cancelled"
+  receiptImagePath: string | null
+  receiptDeletedAt: string | null
+  status: "pending_payment" | "paid" | "in_game" | "completed" | "cancelled"
+  notes: string | null
+  paidAt: string | null
+  startedAt: string | null
+  finishedAt: string | null
+  createdByEmail: string | null
+  createdAt: string
+}
+
 export interface PosSaleInputItem {
   productId: string
   variantId: string | null
@@ -187,6 +219,38 @@ type ClosureReportRow = {
   report_snapshot: Record<string, unknown>
 }
 
+type CashGameTemplateRow = {
+  id: string
+  name: string
+  slug: string
+  default_price: number
+  default_party_size: number
+  sort_order: number
+  is_active: boolean
+}
+
+type WalkInGameRow = {
+  id: string
+  cash_session_id: string
+  game_template_id: string | null
+  game_name: string
+  customer_name: string | null
+  customer_phone: string | null
+  party_size: number
+  price: number
+  payment_method: CashPaymentMethod | null
+  payment_status: "pending" | "paid" | "cancelled"
+  receipt_image_path: string | null
+  receipt_deleted_at: string | null
+  status: "pending_payment" | "paid" | "in_game" | "completed" | "cancelled"
+  notes: string | null
+  paid_at: string | null
+  started_at: string | null
+  finished_at: string | null
+  created_by_email: string | null
+  created_at: string
+}
+
 const newId = () =>
   typeof crypto !== "undefined" && "randomUUID" in crypto
     ? crypto.randomUUID()
@@ -258,6 +322,140 @@ export async function uploadCashReceipt(file: File) {
 export async function cleanupOldCashReceipts() {
   const { error } = await supabase.rpc("cleanup_old_cash_receipts")
   if (error) console.warn("No se pudieron limpiar comprobantes vencidos:", error.message)
+}
+
+export async function fetchCashGameTemplates() {
+  const { data, error } = await supabase
+    .from("cash_game_templates")
+    .select("id, name, slug, default_price, default_party_size, sort_order, is_active")
+    .order("sort_order", { ascending: true })
+    .order("name", { ascending: true })
+
+  if (error) throw new Error(error.message)
+
+  return ((data || []) as CashGameTemplateRow[]).map((row) => ({
+    id: row.id,
+    name: row.name,
+    slug: row.slug,
+    defaultPrice: Number(row.default_price),
+    defaultPartySize: row.default_party_size,
+    sortOrder: row.sort_order,
+    isActive: row.is_active,
+  }))
+}
+
+export async function createCashGameTemplate(input: {
+  name: string
+  defaultPrice?: number
+  defaultPartySize?: number
+  sortOrder?: number
+}) {
+  const { error } = await supabase.rpc("create_cash_game_template", {
+    p_name: input.name,
+    p_default_price: input.defaultPrice ?? 0,
+    p_default_party_size: input.defaultPartySize ?? 1,
+    p_sort_order: input.sortOrder ?? 0,
+  })
+
+  if (error) throw new Error(error.message)
+}
+
+export async function updateCashGameTemplate(id: string, patch: Partial<CashGameTemplate>) {
+  const payload: Record<string, string | number | boolean> = {}
+  if ("name" in patch && patch.name !== undefined) payload.name = patch.name
+  if ("defaultPrice" in patch && patch.defaultPrice !== undefined) payload.default_price = patch.defaultPrice
+  if ("defaultPartySize" in patch && patch.defaultPartySize !== undefined) {
+    payload.default_party_size = patch.defaultPartySize
+  }
+  if ("sortOrder" in patch && patch.sortOrder !== undefined) payload.sort_order = patch.sortOrder
+  if ("isActive" in patch && patch.isActive !== undefined) payload.is_active = patch.isActive
+
+  const { error } = await supabase.from("cash_game_templates").update(payload).eq("id", id)
+  if (error) throw new Error(error.message)
+}
+
+export async function fetchWalkInGames(cashSessionId: string) {
+  const { data, error } = await supabase
+    .from("walk_in_games")
+    .select("id, cash_session_id, game_template_id, game_name, customer_name, customer_phone, party_size, price, payment_method, payment_status, receipt_image_path, receipt_deleted_at, status, notes, paid_at, started_at, finished_at, created_by_email, created_at")
+    .eq("cash_session_id", cashSessionId)
+    .order("created_at", { ascending: false })
+
+  if (error) throw new Error(error.message)
+
+  return ((data || []) as WalkInGameRow[]).map((row) => ({
+    id: row.id,
+    cashSessionId: row.cash_session_id,
+    gameTemplateId: row.game_template_id,
+    gameName: row.game_name,
+    customerName: row.customer_name,
+    customerPhone: row.customer_phone,
+    partySize: row.party_size,
+    price: Number(row.price),
+    paymentMethod: row.payment_method,
+    paymentStatus: row.payment_status,
+    receiptImagePath: row.receipt_image_path ? resolveMediaPath(row.receipt_image_path, "receipts") : null,
+    receiptDeletedAt: row.receipt_deleted_at,
+    status: row.status,
+    notes: row.notes,
+    paidAt: row.paid_at,
+    startedAt: row.started_at,
+    finishedAt: row.finished_at,
+    createdByEmail: row.created_by_email,
+    createdAt: row.created_at,
+  }))
+}
+
+export async function createWalkInGame(input: {
+  gameTemplateId?: string | null
+  gameName: string
+  customerName?: string
+  customerPhone?: string
+  partySize: number
+  price: number
+  notes?: string
+}) {
+  const { error } = await supabase.rpc("create_walk_in_game", {
+    p_game_template_id: input.gameTemplateId || null,
+    p_game_name: input.gameName,
+    p_customer_name: input.customerName || null,
+    p_customer_phone: input.customerPhone || null,
+    p_party_size: input.partySize,
+    p_price: input.price,
+    p_notes: input.notes || null,
+  })
+
+  if (error) throw new Error(error.message)
+}
+
+export async function registerWalkInGamePayment(input: {
+  gameId: string
+  paymentMethod: CashPaymentMethod
+  receiptImagePath?: string | null
+  customerName?: string
+  customerPhone?: string
+  notes?: string
+}) {
+  const { error } = await supabase.rpc("register_walk_in_game_payment", {
+    p_game_id: input.gameId,
+    p_payment_method: input.paymentMethod,
+    p_receipt_image_path: input.receiptImagePath || null,
+    p_customer_name: input.customerName || null,
+    p_customer_phone: input.customerPhone || null,
+    p_notes: input.notes || null,
+  })
+
+  if (error) throw new Error(error.message)
+}
+
+export async function startWalkInGame(gameId: string) {
+  const { error } = await supabase.rpc("start_walk_in_game", { p_game_id: gameId })
+  if (error) throw new Error(error.message)
+}
+
+export async function finishWalkInGame(gameId: string) {
+  const { error } = await supabase.rpc("finish_walk_in_game", { p_game_id: gameId })
+  if (error) throw new Error(error.message)
 }
 
 export async function fetchOpenCashSession() {

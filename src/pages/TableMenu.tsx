@@ -11,6 +11,7 @@ import {
   type PublicPaymentQr,
   type PublicRestaurantTable,
 } from "../lib/tableOrderService"
+import { resolveCatalogImage } from "../lib/contentService"
 import "../styles/TableMenu.css"
 
 type CartItem = {
@@ -374,7 +375,7 @@ export default function TableMenu() {
               const price = product.variants[0]?.price ?? product.basePrice
               return (
                 <article key={product.id} className="table-product-card">
-                  {product.imagePath ? <img src={product.imagePath} alt={product.name} /> : <div className="table-product-fallback" />}
+                  <img src={resolveCatalogImage(product.imagePath)} alt={product.name} />
                   <div>
                     <span>{product.productType === "combo" ? "Combo" : "Producto"}</span>
                     <strong>{product.name}</strong>

@@ -605,6 +605,59 @@ const slugify = (value: string) =>
     .replace(/^-+|-+$/g, "")
     || newId().slice(0, 8)
 
+const buildUniqueSlug = (baseSlug: string, existingSlugs: string[]) => {
+  const slugSet = new Set(existingSlugs)
+  if (!slugSet.has(baseSlug)) {
+    return baseSlug
+  }
+
+  let suffix = 2
+  while (slugSet.has(`${baseSlug}-${suffix}`)) {
+    suffix += 1
+  }
+
+  return `${baseSlug}-${suffix}`
+}
+
+const getUniqueCategorySlug = async (baseSlug: string, excludeId?: string) => {
+  let query = supabase
+    .from("product_categories")
+    .select("id, slug")
+    .like("slug", `${baseSlug}%`)
+
+  if (excludeId) {
+    query = query.neq("id", excludeId)
+  }
+
+  const { data, error } = await query
+  if (error) throw new Error(error.message)
+
+  return buildUniqueSlug(
+    baseSlug,
+    ((data || []) as Array<{ slug: string }>).map((item) => item.slug),
+  )
+}
+
+const getUniqueProductSlug = async (categoryId: string, baseSlug: string, excludeId?: string) => {
+  let query = supabase
+    .from("products")
+    .select("id, slug")
+    .eq("category_id", categoryId)
+    .like("slug", `${baseSlug}%`)
+
+  if (excludeId) {
+    query = query.neq("id", excludeId)
+  }
+
+  const { data, error } = await query
+  if (error) throw new Error(error.message)
+
+  return buildUniqueSlug(
+    baseSlug,
+    ((data || []) as Array<{ slug: string }>).map((item) => item.slug),
+  )
+}
+
 const laPazDateRangeToUtc = (date: string) => {
   const [year, month, day] = date.split("-").map(Number)
   const start = new Date(Date.UTC(year, month - 1, day, 4, 0, 0, 0))
@@ -1322,9 +1375,10 @@ export async function fetchAdminProducts() {
 
 export async function createProductCategory(input?: Partial<AdminProductCategory>) {
   const name = input?.name?.trim() || "Nueva categoria"
+  const slug = await getUniqueCategorySlug(slugify(input?.slug || name))
   const { error } = await supabase.from("product_categories").insert({
     name,
-    slug: slugify(input?.slug || name),
+    slug,
     description: input?.description || null,
     image_path: input?.imagePath ? toStoragePath(input.imagePath, "products") : null,
     sort_order: input?.sortOrder ?? 0,
@@ -1339,17 +1393,26 @@ export async function updateProductCategory(
   patch: Partial<AdminProductCategory>,
 ) {
   const payload: Record<string, string | number | boolean | null> = {}
-  if ("name" in patch && patch.name !== undefined) {
-    payload.name = patch.name
-    payload.slug = slugify(patch.slug || patch.name)
-  }
-  if ("slug" in patch && patch.slug !== undefined) payload.slug = slugify(patch.slug)
+  if ("name" in patch && patch.name !== undefined) payload.name = patch.name
   if ("description" in patch) payload.description = patch.description || null
   if ("imagePath" in patch) {
     payload.image_path = patch.imagePath ? toStoragePath(patch.imagePath, "products") : null
   }
   if ("sortOrder" in patch && patch.sortOrder !== undefined) payload.sort_order = patch.sortOrder
   if ("isActive" in patch && patch.isActive !== undefined) payload.is_active = patch.isActive
+
+  if ("name" in patch || "slug" in patch) {
+    const { data, error } = await supabase
+      .from("product_categories")
+      .select("name, slug")
+      .eq("id", id)
+      .single()
+
+    if (error) throw new Error(error.message)
+
+    const baseSlug = slugify(patch.slug || patch.name || data.name)
+    payload.slug = await getUniqueCategorySlug(baseSlug, id)
+  }
 
   const { error } = await supabase.from("product_categories").update(payload).eq("id", id)
   if (error) throw new Error(error.message)
@@ -1372,10 +1435,11 @@ export async function deleteProductCategory(id: string) {
 
 export async function createProduct(categoryId: string, input?: Partial<AdminProduct>) {
   const name = input?.name?.trim() || "Nuevo producto"
+  const slug = await getUniqueProductSlug(categoryId, slugify(input?.slug || name))
   const { error } = await supabase.from("products").insert({
     category_id: categoryId,
     name,
-    slug: slugify(input?.slug || name),
+    slug,
     description: input?.description || null,
     base_price: input?.basePrice ?? 0,
     image_path: input?.imagePath ? toStoragePath(input.imagePath, "products") : null,
@@ -1391,11 +1455,7 @@ export async function createProduct(categoryId: string, input?: Partial<AdminPro
 export async function updateProduct(id: string, patch: Partial<AdminProduct>) {
   const payload: Record<string, string | number | boolean | null> = {}
   if ("categoryId" in patch && patch.categoryId !== undefined) payload.category_id = patch.categoryId
-  if ("name" in patch && patch.name !== undefined) {
-    payload.name = patch.name
-    payload.slug = slugify(patch.slug || patch.name)
-  }
-  if ("slug" in patch && patch.slug !== undefined) payload.slug = slugify(patch.slug)
+  if ("name" in patch && patch.name !== undefined) payload.name = patch.name
   if ("description" in patch) payload.description = patch.description || null
   if ("basePrice" in patch && patch.basePrice !== undefined) payload.base_price = patch.basePrice
   if ("imagePath" in patch) {
@@ -1405,6 +1465,20 @@ export async function updateProduct(id: string, patch: Partial<AdminProduct>) {
   if ("isActive" in patch && patch.isActive !== undefined) payload.is_active = patch.isActive
   if ("isFeatured" in patch && patch.isFeatured !== undefined) payload.is_featured = patch.isFeatured
   if ("sortOrder" in patch && patch.sortOrder !== undefined) payload.sort_order = patch.sortOrder
+
+  if ("categoryId" in patch || "name" in patch || "slug" in patch) {
+    const { data, error } = await supabase
+      .from("products")
+      .select("category_id, name, slug")
+      .eq("id", id)
+      .single()
+
+    if (error) throw new Error(error.message)
+
+    const categoryId = patch.categoryId || data.category_id
+    const baseSlug = slugify(patch.slug || patch.name || data.name)
+    payload.slug = await getUniqueProductSlug(categoryId, baseSlug, id)
+  }
 
   const { error } = await supabase.from("products").update(payload).eq("id", id)
   if (error) throw new Error(error.message)

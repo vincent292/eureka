@@ -26,14 +26,49 @@
 .cash-detail,
 .cash-cart,
 .cash-list,
-.cash-movement-list {
+.cash-movement-list,
+.cash-game-form-block,
+.cash-game-payment {
   display: grid;
+  gap: 0.8rem;
+}
+
+.cash-game-form-block {
+  padding-top: 0.85rem;
+  border-top: 1px solid rgba(16, 33, 37, 0.08);
+}
+
+.cash-template-item {
   gap: 0.8rem;
 }
 
 .cash-open-card {
   grid-template-columns: minmax(240px, 1fr) 180px minmax(240px, 1fr) auto;
   align-items: end;
+}
+
+.cash-open-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.cash-open-summary {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.85rem;
+  border-radius: 16px;
+  background: #f7faeb;
+}
+
+.cash-open-summary span {
+  color: #58676b;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.cash-open-summary strong {
+  color: #102125;
 }
 
 .cash-open-card h3,
@@ -244,6 +279,14 @@
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
+}
+
+.cash-report-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  align-items: center;
+  justify-content: flex-end;
 }
 
 .cash-cart-item__head button {
@@ -463,7 +506,8 @@
   .cash-pos,
   .cash-two-col,
   .cash-form-grid,
-  .cash-form-grid--tools {
+  .cash-form-grid--tools,
+  .cash-open-summary-grid {
     grid-template-columns: 1fr;
   }
 

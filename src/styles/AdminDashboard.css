@@ -313,7 +313,6 @@
 .admin-category-strip > button,
 .admin-category-strip article {
   display: grid;
-  grid-template-columns: 44px minmax(0, 1fr) auto auto;
   gap: 0.65rem;
   align-items: center;
   min-height: 74px;
@@ -331,6 +330,35 @@
   font: inherit;
   font-weight: 900;
   text-align: left;
+}
+
+.admin-category-card {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.admin-category-card.is-active {
+  border-color: rgba(95, 135, 66, 0.42);
+  box-shadow: 0 14px 32px rgba(48, 68, 34, 0.12);
+}
+
+.admin-category-card__main {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 0.65rem;
+  align-items: center;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.admin-category-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
 }
 
 .admin-category-strip > button.is-active {
@@ -1629,6 +1657,16 @@
 .admin-modal-form {
   display: grid;
   gap: 0.85rem;
+}
+
+.admin-modal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+.admin-modal-actions button {
+  flex: 1 1 180px;
 }
 
 .admin-modal-form label {

@@ -1,5 +1,7 @@
 import { supabase } from "./supabaseClient"
 
+export const DEFAULT_CATALOG_IMAGE = "/imagendefault.jpeg"
+
 export interface HeroSlide {
   id: string
   imagePath: string
@@ -58,6 +60,8 @@ export const resolveMediaPath = (path: string, bucket: string) => {
   const { data } = supabase.storage.from(bucket).getPublicUrl(path)
   return data.publicUrl
 }
+
+export const resolveCatalogImage = (path?: string | null) => path || DEFAULT_CATALOG_IMAGE
 
 export async function fetchHeroSlides(): Promise<HeroSlide[]> {
   const { data, error } = await supabase
