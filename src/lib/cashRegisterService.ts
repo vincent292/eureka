@@ -8,10 +8,13 @@ export type CashMovementStatus = "active" | "cancelled"
 export interface CashSession {
   id: string
   openedByEmail: string | null
+  openingOperatorName: string | null
   openedAt: string
   closedByEmail: string | null
+  closingOperatorName: string | null
   closedAt: string | null
   openingCashAmount: number
+  openingBalanceReason: string | null
   closingCashCounted: number | null
   expectedCashAmount: number | null
   differenceAmount: number | null
@@ -99,6 +102,8 @@ export interface ClosureReport {
   expectedCashAmount: number
   countedCashAmount: number
   differenceAmount: number
+  openingOperatorName: string | null
+  closingOperatorName: string | null
   closedByEmail: string | null
   closedAt: string
   reportSnapshot: Record<string, unknown>
@@ -147,10 +152,13 @@ export interface PosSaleInputItem {
 type CashSessionRow = {
   id: string
   opened_by_email: string | null
+  opening_operator_name: string | null
   opened_at: string
   closed_by_email: string | null
+  closing_operator_name: string | null
   closed_at: string | null
   opening_cash_amount: number
+  opening_balance_reason: string | null
   closing_cash_counted: number | null
   expected_cash_amount: number | null
   difference_amount: number | null
@@ -214,6 +222,8 @@ type ClosureReportRow = {
   expected_cash_amount: number
   counted_cash_amount: number
   difference_amount: number
+  opening_operator_name: string | null
+  closing_operator_name: string | null
   closed_by_email: string | null
   closed_at: string
   report_snapshot: Record<string, unknown>
@@ -261,10 +271,13 @@ const toNumber = (value: unknown) => Number(value || 0)
 const mapCashSession = (row: CashSessionRow): CashSession => ({
   id: row.id,
   openedByEmail: row.opened_by_email,
+  openingOperatorName: row.opening_operator_name,
   openedAt: row.opened_at,
   closedByEmail: row.closed_by_email,
+  closingOperatorName: row.closing_operator_name,
   closedAt: row.closed_at,
   openingCashAmount: Number(row.opening_cash_amount),
+  openingBalanceReason: row.opening_balance_reason,
   closingCashCounted: row.closing_cash_counted === null ? null : Number(row.closing_cash_counted),
   expectedCashAmount: row.expected_cash_amount === null ? null : Number(row.expected_cash_amount),
   differenceAmount: row.difference_amount === null ? null : Number(row.difference_amount),
@@ -464,10 +477,17 @@ export async function fetchOpenCashSession() {
   return data ? mapCashSession(data as CashSessionRow) : null
 }
 
-export async function openCashSession(openingCashAmount: number, notes?: string) {
+export async function openCashSession(
+  openingCashAmount: number,
+  notes?: string,
+  openingOperatorName?: string,
+  openingBalanceReason?: string,
+) {
   const { error } = await supabase.rpc("open_cash_session", {
     p_opening_cash_amount: openingCashAmount,
     p_notes: notes || null,
+    p_opening_operator_name: openingOperatorName || null,
+    p_opening_balance_reason: openingBalanceReason || null,
   })
   if (error) throw new Error(error.message)
 }
@@ -645,10 +665,15 @@ export async function registerTableOrderPayment(input: {
   if (error) throw new Error(error.message)
 }
 
-export async function closeCashSession(countedCashAmount: number, closingNotes?: string) {
+export async function closeCashSession(
+  countedCashAmount: number,
+  closingNotes?: string,
+  closingOperatorName?: string,
+) {
   const { error } = await supabase.rpc("close_cash_session", {
     p_counted_cash_amount: countedCashAmount,
     p_closing_notes: closingNotes || null,
+    p_closing_operator_name: closingOperatorName || null,
   })
   if (error) throw new Error(error.message)
 }
@@ -683,7 +708,7 @@ export async function markBookingNoShow(bookingId: string, reason?: string) {
 export async function fetchCashSessions(limit = 30) {
   const { data, error } = await supabase
     .from("cash_sessions")
-    .select("id, opened_by_email, opened_at, closed_by_email, closed_at, opening_cash_amount, closing_cash_counted, expected_cash_amount, difference_amount, status, notes, closing_notes, session_date")
+    .select("id, opened_by_email, opening_operator_name, opened_at, closed_by_email, closing_operator_name, closed_at, opening_cash_amount, opening_balance_reason, closing_cash_counted, expected_cash_amount, difference_amount, status, notes, closing_notes, session_date")
     .order("session_date", { ascending: false })
     .limit(limit)
 
@@ -694,7 +719,7 @@ export async function fetchCashSessions(limit = 30) {
 export async function fetchClosureReports(limit = 30) {
   const { data, error } = await supabase
     .from("cash_closure_reports")
-    .select("id, cash_session_id, report_date, opening_cash_amount, total_cash_income, total_qr_income, total_card_income, total_transfer_income, total_expenses, total_reservation_payments, total_table_order_payments, total_pos_sales, total_manual_income, expected_cash_amount, counted_cash_amount, difference_amount, closed_by_email, closed_at, report_snapshot")
+    .select("id, cash_session_id, report_date, opening_cash_amount, total_cash_income, total_qr_income, total_card_income, total_transfer_income, total_expenses, total_reservation_payments, total_table_order_payments, total_pos_sales, total_manual_income, expected_cash_amount, counted_cash_amount, difference_amount, opening_operator_name, closing_operator_name, closed_by_email, closed_at, report_snapshot")
     .order("closed_at", { ascending: false })
     .limit(limit)
 
@@ -716,6 +741,8 @@ export async function fetchClosureReports(limit = 30) {
     expectedCashAmount: Number(row.expected_cash_amount),
     countedCashAmount: Number(row.counted_cash_amount),
     differenceAmount: Number(row.difference_amount),
+    openingOperatorName: row.opening_operator_name,
+    closingOperatorName: row.closing_operator_name,
     closedByEmail: row.closed_by_email,
     closedAt: row.closed_at,
     reportSnapshot: row.report_snapshot || {},

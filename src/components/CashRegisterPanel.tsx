@@ -116,10 +116,14 @@ const minutesLabel = (minutes: number) => {
   return `${Math.floor(minutes / 60)} h ${minutes % 60} min`
 }
 
-const sanitizeMoneyInput = (value: string) =>
-  value
-    .replace(/[^0-9.]/g, "")
+const sanitizeMoneyInput = (value: string, allowNegative = false) => {
+  const sanitized = value
+    .replace(allowNegative ? /[^0-9.-]/g : /[^0-9.]/g, "")
+    .replace(/(?!^)-/g, "")
     .replace(/(\..*)\./g, "$1")
+
+  return allowNegative ? sanitized : sanitized.replace(/-/g, "")
+}
 
 const paymentLabels: Record<CashPaymentMethod, string> = {
   cash: "Efectivo",
@@ -162,6 +166,8 @@ export default function CashRegisterPanel({
   const [includeCancelled, setIncludeCancelled] = useState(false)
   const [openingModalOpen, setOpeningModalOpen] = useState(false)
   const [openingAmount, setOpeningAmount] = useState("0")
+  const [openingOperatorName, setOpeningOperatorName] = useState("")
+  const [openingBalanceReason, setOpeningBalanceReason] = useState("")
   const [openingNotes, setOpeningNotes] = useState("")
   const [manualIncome, setManualIncome] = useState({ amount: "", method: "cash" as CashPaymentMethod, description: "", customerName: "", customerPhone: "" })
   const [expenseForm, setExpenseForm] = useState({ amount: "", method: "cash" as CashPaymentMethod, reason: "", categoryId: "", description: "" })
@@ -171,11 +177,13 @@ export default function CashRegisterPanel({
   const [cart, setCart] = useState<CartItem[]>([])
   const [posForm, setPosForm] = useState({ customerName: "", customerPhone: "", discount: "0", method: "cash" as CashPaymentMethod, notes: "" })
   const [posReceipt, setPosReceipt] = useState<File | null>(null)
+  const [posCartOpen, setPosCartOpen] = useState(false)
   const [reservationSearch, setReservationSearch] = useState("")
   const [selectedReservationId, setSelectedReservationId] = useState("")
   const [reservationPaymentMethod, setReservationPaymentMethod] = useState<CashPaymentMethod>("cash")
   const [reservationReceipt, setReservationReceipt] = useState<File | null>(null)
   const [closingCash, setClosingCash] = useState("")
+  const [closingOperatorName, setClosingOperatorName] = useState("")
   const [closingNotes, setClosingNotes] = useState("")
   const [cancelModal, setCancelModal] = useState<{ movement: CashMovement; reason: string; key: string } | null>(null)
   const [gameTemplateForm, setGameTemplateForm] = useState({ name: "", defaultPrice: "", defaultPartySize: "1" })
@@ -192,7 +200,7 @@ export default function CashRegisterPanel({
 
   const activePaymentQr = paymentQrs.find((qr) => qr.isActive) || null
   const isCashOpen = cashSession?.status === "open"
-  const openingUserLabel = cashSession?.openedByEmail || summary?.openedByEmail || "Usuario actual"
+  const openingUserLabel = cashSession?.openingOperatorName || cashSession?.openedByEmail || summary?.openedByEmail || "Usuario actual"
 
   const loadCash = useCallback(async () => {
     await cleanupOldCashReceipts()
@@ -246,6 +254,12 @@ export default function CashRegisterPanel({
       price: current.price === "0" ? String(template.defaultPrice) : current.price,
     }))
   }, [gameTemplates, walkInGameForm.templateId])
+
+  useEffect(() => {
+    if (activeTab !== "pos") {
+      setPosCartOpen(false)
+    }
+  }, [activeTab])
 
   const refreshAll = async (message: string) => {
     await loadCash()
@@ -378,15 +392,26 @@ export default function CashRegisterPanel({
 
   const handleOpenCash = () => {
     const amount = Number(openingAmount || 0)
-    if (Number.isNaN(amount) || amount < 0) {
+    if (Number.isNaN(amount)) {
       setSaveMessage("El monto inicial debe ser un numero valido.")
+      return
+    }
+    if (amount < 0 && !openingBalanceReason.trim()) {
+      setSaveMessage("Explica por que la apertura tiene saldo negativo.")
       return
     }
 
     runAction(
       async () => {
-        await openCashSession(amount, openingNotes)
+        await openCashSession(
+          amount,
+          openingNotes,
+          openingOperatorName.trim() || undefined,
+          openingBalanceReason.trim() || undefined,
+        )
         setOpeningModalOpen(false)
+        setOpeningOperatorName("")
+        setOpeningBalanceReason("")
       },
       "Caja abierta correctamente.",
     )
@@ -480,13 +505,18 @@ export default function CashRegisterPanel({
   const handleCloseCash = () => {
     if (!requireOpenCash()) return
     setWorking(true)
-    closeCashSession(Number(closingCash || 0), closingNotes)
+    closeCashSession(
+      Number(closingCash || 0),
+      closingNotes,
+      closingOperatorName.trim() || undefined,
+    )
       .then(async () => {
         const latestReports = await fetchClosureReports(1)
         if (latestReports[0]) {
           exportClosurePdf(latestReports[0], true)
         }
         await refreshAll("Caja cerrada correctamente.")
+        setClosingOperatorName("")
       })
       .catch((error) => {
         console.error(error)
@@ -666,11 +696,14 @@ export default function CashRegisterPanel({
     expectedCashAmount: number
     countedCashAmount?: number | null
     differenceAmount?: number | null
+    openingOperatorName?: string | null
+    closingOperatorName?: string | null
     closedByEmail?: string | null
     closedAt?: string | null
   }) => [
     "Eureka Play & Coffee - Reporte de caja",
     `Fecha: ${report.reportDate || "-"}`,
+    `Apertura por: ${report.openingOperatorName || "-"}`,
     `Monto inicial: ${money(report.openingCashAmount)}`,
     `Ingresos efectivo: ${money(report.totalCashIncome)}`,
     `Ingresos QR: ${money(report.totalQrIncome)}`,
@@ -683,6 +716,7 @@ export default function CashRegisterPanel({
     `Efectivo esperado: ${money(report.expectedCashAmount)}`,
     `Efectivo contado: ${money(report.countedCashAmount)}`,
     `Diferencia: ${money(report.differenceAmount)}`,
+    `Cierre por: ${report.closingOperatorName || report.closedByEmail || "-"}`,
     `Cerrado por: ${report.closedByEmail || "-"}`,
     `Hora cierre: ${dateTime(report.closedAt)}`,
   ]
@@ -692,7 +726,7 @@ export default function CashRegisterPanel({
     const lines = [
       "Eureka Play & Coffee - Reporte de caja actual",
       `Fecha: ${cashSession?.sessionDate || summary?.sessionDate || "-"}`,
-      `Abre: ${summary?.openedByEmail || cashSession?.openedByEmail || "-"}`,
+      `Abre: ${cashSession?.openingOperatorName || summary?.openedByEmail || cashSession?.openedByEmail || "-"}`,
       `Apertura: ${dateTime(summary?.openedAt || cashSession?.openedAt)}`,
       `Monto inicial: ${money(summary?.openingCashAmount)}`,
       `Ingresos efectivo: ${money(summary?.totalCashIncome)}`,
@@ -884,10 +918,13 @@ export default function CashRegisterPanel({
             </div>
           </section>
 
-          <aside className="admin-panel-card cash-cart">
+          <aside className={`admin-panel-card cash-cart ${posCartOpen ? "is-open" : ""}`}>
             <div className="admin-card-toolbar">
               <strong>Carrito</strong>
-              <span>{cart.length} item(s)</span>
+              <div className="admin-inline-actions">
+                <span>{cart.length} item(s)</span>
+                <button type="button" className="cash-cart-close" onClick={() => setPosCartOpen(false)}><FaTimes /></button>
+              </div>
             </div>
             {cartDetails.length === 0 ? <p className="admin-template-help">Agrega productos para iniciar la venta.</p> : null}
             {cartDetails.map(({ item, product, variant, options, total }) => (
@@ -947,6 +984,11 @@ export default function CashRegisterPanel({
             <textarea placeholder="Nota opcional" value={posForm.notes} onChange={(event) => setPosForm({ ...posForm, notes: event.target.value })} />
             <button type="button" className="btn-approve" onClick={handlePosSale} disabled={working || !isCashOpen}>Confirmar venta</button>
           </aside>
+          {posCartOpen ? <button type="button" className="cash-cart-backdrop" onClick={() => setPosCartOpen(false)} aria-label="Cerrar carrito" /> : null}
+          <button type="button" className="cash-mobile-cart-button" onClick={() => setPosCartOpen(true)}>
+            <span>Carrito ({cart.length})</span>
+            <strong>{money(cartTotal)}</strong>
+          </button>
         </div>
       ) : null}
 
@@ -1211,6 +1253,7 @@ export default function CashRegisterPanel({
             <span>Egresos <strong>{money(summary?.totalExpenses)}</strong></span>
             <span>Total general <strong>{money(summary?.grossIncome)}</strong></span>
           </div>
+          <input placeholder="Nombre de quien cierra" value={closingOperatorName} onChange={(event) => setClosingOperatorName(event.target.value)} />
           <input placeholder="Efectivo contado fisicamente" type="number" min="0" step="0.5" value={closingCash} onChange={(event) => setClosingCash(event.target.value)} />
           <textarea placeholder="Notas de cierre" value={closingNotes} onChange={(event) => setClosingNotes(event.target.value)} />
           <div className="admin-inline-actions">
@@ -1231,9 +1274,26 @@ export default function CashRegisterPanel({
             <div className="cash-list cash-list--static">
               {sessions.map((session) => (
                 <article key={session.id}>
-                  <strong>{session.sessionDate} | {session.status}</strong>
-                  <span>Abre: {session.openedByEmail || "-"} | Cierra: {session.closedByEmail || "-"}</span>
-                  <em>{money(session.expectedCashAmount ?? session.openingCashAmount)}</em>
+                  <div>
+                    <strong>{session.sessionDate} | {session.status}</strong>
+                    <span>Abre: {session.openingOperatorName || session.openedByEmail || "-"} | Cierra: {session.closingOperatorName || session.closedByEmail || "-"}</span>
+                    {session.openingBalanceReason ? <span>Saldo negativo: {session.openingBalanceReason}</span> : null}
+                  </div>
+                  <div className="cash-report-actions">
+                    <em>{money(session.expectedCashAmount ?? session.openingCashAmount)}</em>
+                    {closureReports.find((report) => report.cashSessionId === session.id) ? (
+                      <button
+                        type="button"
+                        className="btn-edit"
+                        onClick={() => {
+                          const report = closureReports.find((item) => item.cashSessionId === session.id)
+                          if (report) exportClosurePdf(report)
+                        }}
+                      >
+                        <FaDownload />PDF
+                      </button>
+                    ) : null}
+                  </div>
                 </article>
               ))}
             </div>
@@ -1248,7 +1308,8 @@ export default function CashRegisterPanel({
                 <article key={report.id}>
                   <div>
                     <strong>{report.reportDate}</strong>
-                    <span>Cerrado: {dateTime(report.closedAt)} | Por {report.closedByEmail || "-"}</span>
+                    <span>Apertura: {report.openingOperatorName || "-"} | Cierre: {report.closingOperatorName || report.closedByEmail || "-"}</span>
+                    <span>Cerrado: {dateTime(report.closedAt)}</span>
                     <span>Ventas: {money(report.totalPosSales + report.totalReservationPayments + report.totalTableOrderPayments)}</span>
                   </div>
                   <div className="cash-report-actions">
@@ -1389,9 +1450,21 @@ export default function CashRegisterPanel({
                   inputMode="decimal"
                   placeholder="0.00"
                   value={openingAmount}
-                  onChange={(event) => setOpeningAmount(sanitizeMoneyInput(event.target.value))}
+                  onChange={(event) => setOpeningAmount(sanitizeMoneyInput(event.target.value, true))}
                 />
               </label>
+              <label>Nombre de quien abre
+                <input
+                  placeholder="Ej. Valeria"
+                  value={openingOperatorName}
+                  onChange={(event) => setOpeningOperatorName(event.target.value)}
+                />
+              </label>
+              {Number(openingAmount || 0) < 0 ? (
+                <label>Motivo del saldo negativo
+                  <textarea value={openingBalanceReason} onChange={(event) => setOpeningBalanceReason(event.target.value)} />
+                </label>
+              ) : null}
               <label>Observaciones
                 <textarea value={openingNotes} onChange={(event) => setOpeningNotes(event.target.value)} />
               </label>
