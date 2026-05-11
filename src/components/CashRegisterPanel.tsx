@@ -1,36 +1,47 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { FaCashRegister, FaDownload, FaPlay, FaPrint, FaQrcode, FaSearch, FaStop, FaTimes } from "react-icons/fa"
+import { FaCashRegister, FaDownload, FaPlay, FaPrint, FaQrcode, FaSearch, FaShoppingCart, FaStop, FaTimes } from "react-icons/fa"
 import jsPDF from "jspdf"
 import {
   cancelCashMovement,
   cleanupOldCashReceipts,
   closeCashSession,
+  createCashGameTemplate,
   createCashExpense,
   createManualIncome,
   createPosSale,
   previewPreparedPosStockIssue,
+  createWalkInGame,
   fetchCashExpenses,
+  fetchCashGameTemplates,
   fetchCashMovements,
   fetchCashSessions,
   fetchCashSummary,
   fetchClosureReports,
   fetchExpenseCategories,
   fetchOpenCashSession,
+  fetchWalkInGames,
   finishBookingGame,
+  finishWalkInGame,
   markBookingNoShow,
   openCashSession,
   registerReservationPayment,
   registerTableOrderPayment,
+  registerWalkInGamePayment,
   startBookingGame,
+  startWalkInGame,
   uploadCashReceipt,
   type CashExpense,
+  type CashGameTemplate,
   type CashMovement,
   type CashPaymentMethod,
   type CashSession,
   type CashSummary,
   type ClosureReport,
   type ExpenseCategory,
+  type WalkInGame,
+  updateCashGameTemplate,
 } from "../lib/cashRegisterService"
+import { resolveCatalogImage } from "../lib/contentService"
 import type {
   AdminBooking,
   AdminLiveOrder,
@@ -43,6 +54,8 @@ import "../styles/CashRegisterPanel.css"
 type CashTab =
   | "summary"
   | "pos"
+  | "gameCatalog"
+  | "gameSales"
   | "reservations"
   | "orders"
   | "expenses"
@@ -54,6 +67,22 @@ type CashTab =
 type CartItem = {
   key: string
   productId: string
+  variantId: string | null
+  optionIds: string[]
+  quantity: number
+  notes: string
+}
+
+type GamePaymentDraft = {
+  customerName: string
+  customerPhone: string
+  method: CashPaymentMethod
+  notes: string
+  file: File | null
+}
+
+type PosProductDraft = {
+  product: AdminProduct
   variantId: string | null
   optionIds: string[]
   quantity: number
@@ -74,8 +103,10 @@ type Props = {
 const tabs: Array<{ id: CashTab; label: string }> = [
   { id: "summary", label: "Resumen" },
   { id: "pos", label: "Venta rapida" },
+  { id: "gameCatalog", label: "Crear juego" },
+  { id: "gameSales", label: "Venta juegos" },
   { id: "reservations", label: "Cobrar reserva" },
-  { id: "orders", label: "Pedidos pendientes" },
+  { id: "orders", label: "Pedidos mesas" },
   { id: "expenses", label: "Egresos" },
   { id: "movements", label: "Movimientos" },
   { id: "closure", label: "Cierre" },
@@ -86,12 +117,24 @@ const tabs: Array<{ id: CashTab; label: string }> = [
 const money = (value: number | null | undefined) =>
   `${Number(value || 0).toLocaleString("es-BO", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Bs.`
 
+const moneyLead = (value: number | null | undefined) =>
+  `Bs ${Number(value || 0).toLocaleString("es-BO", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+
 const dateTime = (value: string | null | undefined) =>
   value ? new Date(value).toLocaleString("es-BO", { dateStyle: "short", timeStyle: "short" }) : "-"
 
 const minutesLabel = (minutes: number) => {
   if (minutes < 60) return `${minutes} min`
   return `${Math.floor(minutes / 60)} h ${minutes % 60} min`
+}
+
+const sanitizeMoneyInput = (value: string, allowNegative = false) => {
+  const sanitized = value
+    .replace(allowNegative ? /[^0-9.-]/g : /[^0-9.]/g, "")
+    .replace(/(?!^)-/g, "")
+    .replace(/(\..*)\./g, "$1")
+
+  return allowNegative ? sanitized : sanitized.replace(/-/g, "")
 }
 
 const paymentLabels: Record<CashPaymentMethod, string> = {
@@ -108,6 +151,7 @@ const movementLabels: Record<string, string> = {
   reservation_payment: "Reserva",
   table_order_payment: "Pedido mesa",
   pos_sale: "Venta directa",
+  sale: "Venta juego",
 }
 
 export default function CashRegisterPanel({
@@ -128,9 +172,14 @@ export default function CashRegisterPanel({
   const [expenseCategories, setExpenseCategories] = useState<ExpenseCategory[]>([])
   const [sessions, setSessions] = useState<CashSession[]>([])
   const [closureReports, setClosureReports] = useState<ClosureReport[]>([])
+  const [gameTemplates, setGameTemplates] = useState<CashGameTemplate[]>([])
+  const [walkInGames, setWalkInGames] = useState<WalkInGame[]>([])
   const [working, setWorking] = useState(false)
   const [includeCancelled, setIncludeCancelled] = useState(false)
+  const [openingModalOpen, setOpeningModalOpen] = useState(false)
   const [openingAmount, setOpeningAmount] = useState("0")
+  const [openingOperatorName, setOpeningOperatorName] = useState("")
+  const [openingBalanceReason, setOpeningBalanceReason] = useState("")
   const [openingNotes, setOpeningNotes] = useState("")
   const [manualIncome, setManualIncome] = useState({ amount: "", method: "cash" as CashPaymentMethod, description: "", customerName: "", customerPhone: "" })
   const [expenseForm, setExpenseForm] = useState({ amount: "", method: "cash" as CashPaymentMethod, reason: "", categoryId: "", description: "" })
@@ -138,46 +187,74 @@ export default function CashRegisterPanel({
   const [posSearch, setPosSearch] = useState("")
   const [posCategory, setPosCategory] = useState("all")
   const [cart, setCart] = useState<CartItem[]>([])
-  const [posForm, setPosForm] = useState({ customerName: "", customerPhone: "", discount: "0", method: "cash" as CashPaymentMethod, notes: "" })
+  const [posForm, setPosForm] = useState({
+    customerName: "",
+    customerPhone: "",
+    discount: "0",
+    method: "cash" as CashPaymentMethod,
+    notes: "",
+    invoiceRequired: false,
+    invoiceDocument: "",
+    invoiceName: "",
+  })
   const [posReceipt, setPosReceipt] = useState<File | null>(null)
+  const [posCartOpen, setPosCartOpen] = useState(false)
+  const [posProductDraft, setPosProductDraft] = useState<PosProductDraft | null>(null)
   const [reservationSearch, setReservationSearch] = useState("")
   const [selectedReservationId, setSelectedReservationId] = useState("")
   const [reservationPaymentMethod, setReservationPaymentMethod] = useState<CashPaymentMethod>("cash")
   const [reservationReceipt, setReservationReceipt] = useState<File | null>(null)
   const [closingCash, setClosingCash] = useState("")
+  const [closingOperatorName, setClosingOperatorName] = useState("")
   const [closingNotes, setClosingNotes] = useState("")
   const [cancelModal, setCancelModal] = useState<{ movement: CashMovement; reason: string; key: string } | null>(null)
-  const [gameTick, setGameTick] = useState(0)
+  const [gameTemplateForm, setGameTemplateForm] = useState({ name: "", defaultPrice: "", defaultPartySize: "1" })
+  const [walkInGameForm, setWalkInGameForm] = useState({
+    templateId: "",
+    gameName: "",
+    customerName: "",
+    customerPhone: "",
+    partySize: "1",
+    price: "0",
+    notes: "",
+  })
+  const [gamePaymentDrafts, setGamePaymentDrafts] = useState<Record<string, GamePaymentDraft>>({})
 
   const activePaymentQr = paymentQrs.find((qr) => qr.isActive) || null
   const isCashOpen = cashSession?.status === "open"
+  const openingUserLabel = cashSession?.openingOperatorName || cashSession?.openedByEmail || summary?.openedByEmail || "Usuario actual"
 
   const loadCash = useCallback(async () => {
     await cleanupOldCashReceipts()
-    const [nextSession, nextCategories, nextSessions, nextReports] = await Promise.all([
+    const [nextSession, nextCategories, nextSessions, nextReports, nextGameTemplates] = await Promise.all([
       fetchOpenCashSession(),
       fetchExpenseCategories(),
       fetchCashSessions(),
       fetchClosureReports(),
+      fetchCashGameTemplates(),
     ])
     setCashSession(nextSession)
     setExpenseCategories(nextCategories)
     setSessions(nextSessions)
     setClosureReports(nextReports)
+    setGameTemplates(nextGameTemplates)
 
     if (nextSession) {
-      const [nextSummary, nextMovements, nextExpenses] = await Promise.all([
+      const [nextSummary, nextMovements, nextExpenses, nextWalkInGames] = await Promise.all([
         fetchCashSummary(nextSession.id),
         fetchCashMovements(nextSession.id, includeCancelled && isSuperAdmin),
         fetchCashExpenses(nextSession.id),
+        fetchWalkInGames(nextSession.id),
       ])
       setSummary(nextSummary)
       setMovements(nextMovements)
       setExpenses(nextExpenses)
+      setWalkInGames(nextWalkInGames)
     } else {
       setSummary(null)
       setMovements([])
       setExpenses([])
+      setWalkInGames([])
     }
   }, [includeCancelled, isSuperAdmin])
 
@@ -189,9 +266,27 @@ export default function CashRegisterPanel({
   }, [loadCash, setSaveMessage])
 
   useEffect(() => {
-    const timer = window.setInterval(() => setGameTick((current) => current + 1), 60000)
-    return () => window.clearInterval(timer)
-  }, [])
+    const template = gameTemplates.find((item) => item.id === walkInGameForm.templateId) || null
+    if (!template) return
+
+    setWalkInGameForm((current) => ({
+      ...current,
+      gameName: current.gameName || template.name,
+      partySize: current.partySize === "1" ? String(template.defaultPartySize) : current.partySize,
+      price: current.price === "0" ? String(template.defaultPrice) : current.price,
+    }))
+  }, [gameTemplates, walkInGameForm.templateId])
+
+  useEffect(() => {
+    if (activeTab !== "pos") {
+      setPosCartOpen(false)
+    }
+  }, [activeTab])
+
+  useEffect(() => {
+    document.body.classList.toggle("cash-cart-lock", activeTab === "pos" && posCartOpen)
+    return () => document.body.classList.remove("cash-cart-lock")
+  }, [activeTab, posCartOpen])
 
   const refreshAll = async (message: string) => {
     await loadCash()
@@ -242,7 +337,39 @@ export default function CashRegisterPanel({
 
   const selectedReservation = reservationMatches.find((booking) => booking.id === selectedReservationId) || null
   const pendingOrders = liveOrders.filter((order) => order.paymentStatus !== "paid" && !["rejected", "cancelled"].includes(order.orderStatus))
+  const ordersByTable = Array.from(
+    liveOrders.reduce((map, order) => {
+      const tableKey = order.tableNumber ? `Mesa ${order.tableNumber}` : order.tableName || "Mesa sin numero"
+      const current = map.get(tableKey) || {
+        tableLabel: tableKey,
+        customerCount: 0,
+        orderCount: 0,
+        total: 0,
+        unpaidTotal: 0,
+        orders: [] as AdminLiveOrder[],
+      }
+      current.customerCount += 1
+      current.orderCount += 1
+      current.total += order.total
+      if (order.paymentStatus !== "paid") {
+        current.unpaidTotal += order.total
+      }
+      current.orders.push(order)
+      map.set(tableKey, current)
+      return map
+    }, new Map<string, {
+      tableLabel: string
+      customerCount: number
+      orderCount: number
+      total: number
+      unpaidTotal: number
+      orders: AdminLiveOrder[]
+    }>()).values(),
+  ).sort((a, b) => a.tableLabel.localeCompare(b.tableLabel))
   const activeGameBookings = bookings.filter((booking) => ["paid", "confirmed", "in_game"].includes(booking.status))
+  const activeWalkInGames = walkInGames.filter((game) => ["pending_payment", "paid", "in_game"].includes(game.status))
+  const completedWalkInGames = walkInGames.filter((game) => game.status === "completed")
+  const selectedGameTemplate = gameTemplates.find((template) => template.id === walkInGameForm.templateId) || null
 
   const cartDetails = useMemo(() => {
     return cart.map((item) => {
@@ -264,22 +391,70 @@ export default function CashRegisterPanel({
   const cartDiscount = Math.min(Number(posForm.discount || 0), cartSubtotal)
   const cartTotal = Math.max(cartSubtotal - cartDiscount, 0)
 
-  const addToCart = (product: AdminProduct) => {
+  const openPosProduct = (product: AdminProduct) => {
+    setPosProductDraft({
+      product,
+      variantId: product.variants.find((variant) => variant.isActive)?.id || null,
+      optionIds: [],
+      quantity: 1,
+      notes: "",
+    })
+  }
+
+  const addToCart = (draft: PosProductDraft) => {
     setCart((current) => [
       ...current,
       {
-        key: `${product.id}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-        productId: product.id,
-        variantId: product.variants[0]?.id || null,
-        optionIds: [],
-        quantity: 1,
-        notes: "",
+        key: `${draft.product.id}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        productId: draft.product.id,
+        variantId: draft.variantId,
+        optionIds: draft.optionIds,
+        quantity: draft.quantity,
+        notes: draft.notes,
       },
     ])
+    setPosProductDraft(null)
+    setPosCartOpen(true)
   }
 
   const updateCartItem = (key: string, patch: Partial<CartItem>) => {
     setCart((current) => current.map((item) => (item.key === key ? { ...item, ...patch } : item)))
+  }
+
+  const togglePosDraftOption = (groupId: string, optionId: string, checked: boolean) => {
+    setPosProductDraft((current) => {
+      if (!current) return current
+
+      const group = current.product.optionGroups.find((item) => item.id === groupId)
+      if (!group) return current
+
+      const groupOptionIds = group.options.map((option) => option.id)
+      const withoutGroupOptions = current.optionIds.filter((id) => !groupOptionIds.includes(id))
+
+      if (!checked) {
+        return {
+          ...current,
+          optionIds: current.optionIds.filter((id) => id !== optionId),
+        }
+      }
+
+      if (group.selectionType === "single") {
+        return {
+          ...current,
+          optionIds: [...withoutGroupOptions, optionId],
+        }
+      }
+
+      const selectedInGroup = current.optionIds.filter((id) => groupOptionIds.includes(id))
+      if (group.maxSelect > 0 && selectedInGroup.length >= group.maxSelect) {
+        return current
+      }
+
+      return {
+        ...current,
+        optionIds: [...current.optionIds, optionId],
+      }
+    })
   }
 
   const requireOpenCash = () => {
@@ -290,11 +465,32 @@ export default function CashRegisterPanel({
     return true
   }
 
-  const handleOpenCash = () =>
+  const handleOpenCash = () => {
+    const amount = Number(openingAmount || 0)
+    if (Number.isNaN(amount)) {
+      setSaveMessage("El monto inicial debe ser un numero valido.")
+      return
+    }
+    if (amount < 0 && !openingBalanceReason.trim()) {
+      setSaveMessage("Explica por que la apertura tiene saldo negativo.")
+      return
+    }
+
     runAction(
-      () => openCashSession(Number(openingAmount || 0), openingNotes),
+      async () => {
+        await openCashSession(
+          amount,
+          openingNotes,
+          openingOperatorName.trim() || undefined,
+          openingBalanceReason.trim() || undefined,
+        )
+        setOpeningModalOpen(false)
+        setOpeningOperatorName("")
+        setOpeningBalanceReason("")
+      },
       "Caja abierta correctamente.",
     )
+  }
 
   const handleManualIncome = () => {
     if (!requireOpenCash()) return
@@ -334,6 +530,10 @@ export default function CashRegisterPanel({
       setSaveMessage("Agrega productos al carrito.")
       return
     }
+    if (posForm.invoiceRequired && (!posForm.invoiceDocument.trim() || !posForm.invoiceName.trim())) {
+      setSaveMessage("Completa NIT/CI y nombre para la factura.")
+      return
+    }
     runAction(async () => {
       const stockIssue = await previewPreparedPosStockIssue(
         cart.map((item) => ({
@@ -354,6 +554,9 @@ export default function CashRegisterPanel({
         discountAmount: Number(posForm.discount || 0),
         paymentMethod: posForm.method,
         receiptImagePath: receiptPath,
+        invoiceRequired: posForm.invoiceRequired,
+        invoiceDocument: posForm.invoiceDocument,
+        invoiceName: posForm.invoiceName,
         notes: posForm.notes,
         items: cart.map((item) => ({
           productId: item.productId,
@@ -365,7 +568,17 @@ export default function CashRegisterPanel({
       })
       setCart([])
       setPosReceipt(null)
-      setPosForm({ customerName: "", customerPhone: "", discount: "0", method: "cash", notes: "" })
+      setPosCartOpen(false)
+      setPosForm({
+        customerName: "",
+        customerPhone: "",
+        discount: "0",
+        method: "cash",
+        notes: "",
+        invoiceRequired: false,
+        invoiceDocument: "",
+        invoiceName: "",
+      })
     }, "Venta directa registrada.")
   }
 
@@ -394,10 +607,27 @@ export default function CashRegisterPanel({
 
   const handleCloseCash = () => {
     if (!requireOpenCash()) return
-    runAction(
-      () => closeCashSession(Number(closingCash || 0), closingNotes),
-      "Caja cerrada correctamente.",
+    setWorking(true)
+    closeCashSession(
+      Number(closingCash || 0),
+      closingNotes,
+      closingOperatorName.trim() || undefined,
     )
+      .then(async () => {
+        const latestReports = await fetchClosureReports(1)
+        if (latestReports[0]) {
+          exportClosurePdf(latestReports[0], true)
+        }
+        await refreshAll("Caja cerrada correctamente.")
+        setClosingOperatorName("")
+      })
+      .catch((error) => {
+        console.error(error)
+        setSaveMessage(error instanceof Error ? error.message : "No se pudo cerrar la caja.")
+      })
+      .finally(() => {
+        setWorking(false)
+      })
   }
 
   const handleCancelMovement = () => {
@@ -420,6 +650,115 @@ export default function CashRegisterPanel({
             ? finishBookingGame(bookingId)
             : markBookingNoShow(bookingId, "Marcado como no asistio desde Caja."),
       action === "start" ? "Juego iniciado." : action === "finish" ? "Juego finalizado." : "Reserva marcada como no asistio.",
+    )
+  }
+
+  const patchGamePaymentDraft = (gameId: string, patch: Partial<GamePaymentDraft>) => {
+    setGamePaymentDrafts((current) => {
+      const nextDraft = Object.assign({
+        customerName: "",
+        customerPhone: "",
+        method: "cash",
+        notes: "",
+        file: null,
+      }, current[gameId] || {}, patch) as GamePaymentDraft
+
+      return {
+        ...current,
+        [gameId]: nextDraft,
+      }
+    })
+  }
+
+  const handleGameTemplateCreate = () => {
+    if (!requireOpenCash()) return
+    if (!gameTemplateForm.name.trim()) {
+      setSaveMessage("Escribe el nombre del juego.")
+      return
+    }
+
+    runAction(async () => {
+      await createCashGameTemplate({
+        name: gameTemplateForm.name,
+        defaultPrice: Number(gameTemplateForm.defaultPrice || 0),
+        defaultPartySize: Number(gameTemplateForm.defaultPartySize || 1),
+        sortOrder: gameTemplates.length + 1,
+      })
+      setGameTemplateForm({ name: "", defaultPrice: "", defaultPartySize: "1" })
+    }, "Tipo de juego creado.")
+  }
+
+  const handleGameTemplateSave = (template: CashGameTemplate) => {
+    runAction(
+      () => updateCashGameTemplate(template.id, template),
+      "Tipo de juego actualizado.",
+    )
+  }
+
+  const handleWalkInGameCreate = () => {
+    if (!requireOpenCash()) return
+
+    const nextName = walkInGameForm.gameName.trim() || selectedGameTemplate?.name || ""
+    if (!nextName) {
+      setSaveMessage("Escribe o selecciona un juego.")
+      return
+    }
+
+    runAction(async () => {
+      await createWalkInGame({
+        gameTemplateId: walkInGameForm.templateId || null,
+        gameName: nextName,
+        customerName: walkInGameForm.customerName,
+        customerPhone: walkInGameForm.customerPhone,
+        partySize: Number(walkInGameForm.partySize || selectedGameTemplate?.defaultPartySize || 1),
+        price: Number(walkInGameForm.price || selectedGameTemplate?.defaultPrice || 0),
+        notes: walkInGameForm.notes,
+      })
+      setWalkInGameForm({
+        templateId: "",
+        gameName: "",
+        customerName: "",
+        customerPhone: "",
+        partySize: "1",
+        price: "0",
+        notes: "",
+      })
+    }, "Juego creado en caja.")
+  }
+
+  const handleWalkInGamePayment = (game: WalkInGame) => {
+    if (!requireOpenCash()) return
+    const draft = gamePaymentDrafts[game.id] || {
+      customerName: game.customerName || "",
+      customerPhone: game.customerPhone || "",
+      method: "cash" as CashPaymentMethod,
+      notes: game.notes || "",
+      file: null,
+    }
+
+    runAction(async () => {
+      const receiptPath = draft.method === "qr" && draft.file ? await uploadCashReceipt(draft.file) : null
+      if (draft.method === "qr" && !receiptPath) throw new Error("Sube el comprobante QR.")
+      await registerWalkInGamePayment({
+        gameId: game.id,
+        paymentMethod: draft.method,
+        receiptImagePath: receiptPath,
+        customerName: draft.customerName,
+        customerPhone: draft.customerPhone,
+        notes: draft.notes,
+      })
+      setGamePaymentDrafts((current) => {
+        const next = { ...current }
+        delete next[game.id]
+        return next
+      })
+    }, "Pago de juego registrado.")
+  }
+
+  const handleWalkInGameStatus = (gameId: string, action: "start" | "finish") => {
+    runAction(
+      () => (action === "start" ? startWalkInGame(gameId) : finishWalkInGame(gameId)),
+      action === "start" ? "Juego iniciado." : "Juego finalizado.",
     )
   }
 
@@ -446,16 +785,57 @@ export default function CashRegisterPanel({
     URL.revokeObjectURL(url)
   }
 
+  const buildClosurePdfLines = (report: {
+    reportDate: string
+    openingCashAmount: number
+    totalCashIncome: number
+    totalQrIncome: number
+    totalCardIncome?: number
+    totalTransferIncome?: number
+    totalReservationPayments: number
+    totalTableOrderPayments: number
+    totalPosSales: number
+    totalExpenses: number
+    expectedCashAmount: number
+    countedCashAmount?: number | null
+    differenceAmount?: number | null
+    openingOperatorName?: string | null
+    closingOperatorName?: string | null
+    closedByEmail?: string | null
+    closedAt?: string | null
+  }) => [
+    "Eureka Play & Coffee - Reporte de caja",
+    `Fecha: ${report.reportDate || "-"}`,
+    `Apertura por: ${report.openingOperatorName || "-"}`,
+    `Monto inicial: ${money(report.openingCashAmount)}`,
+    `Ingresos efectivo: ${money(report.totalCashIncome)}`,
+    `Ingresos QR: ${money(report.totalQrIncome)}`,
+    `Ingresos tarjeta: ${money(report.totalCardIncome)}`,
+    `Ingresos transferencia: ${money(report.totalTransferIncome)}`,
+    `Reservas cobradas: ${money(report.totalReservationPayments)}`,
+    `Pedidos mesa cobrados: ${money(report.totalTableOrderPayments)}`,
+    `Ventas directas: ${money(report.totalPosSales)}`,
+    `Egresos: ${money(report.totalExpenses)}`,
+    `Efectivo esperado: ${money(report.expectedCashAmount)}`,
+    `Efectivo contado: ${money(report.countedCashAmount)}`,
+    `Diferencia: ${money(report.differenceAmount)}`,
+    `Cierre por: ${report.closingOperatorName || report.closedByEmail || "-"}`,
+    `Cerrado por: ${report.closedByEmail || "-"}`,
+    `Hora cierre: ${dateTime(report.closedAt)}`,
+  ]
+
   const exportPdf = () => {
     const doc = new jsPDF()
     const lines = [
-      "Eureka Play & Coffee - Reporte de caja",
+      "Eureka Play & Coffee - Reporte de caja actual",
       `Fecha: ${cashSession?.sessionDate || summary?.sessionDate || "-"}`,
-      `Abre: ${summary?.openedByEmail || cashSession?.openedByEmail || "-"}`,
+      `Abre: ${cashSession?.openingOperatorName || summary?.openedByEmail || cashSession?.openedByEmail || "-"}`,
       `Apertura: ${dateTime(summary?.openedAt || cashSession?.openedAt)}`,
       `Monto inicial: ${money(summary?.openingCashAmount)}`,
       `Ingresos efectivo: ${money(summary?.totalCashIncome)}`,
       `Ingresos QR: ${money(summary?.totalQrIncome)}`,
+      `Ingresos tarjeta: ${money(summary?.totalCardIncome)}`,
+      `Ingresos transferencia: ${money(summary?.totalTransferIncome)}`,
       `Reservas cobradas: ${money(summary?.totalReservationPayments)}`,
       `Pedidos mesa cobrados: ${money(summary?.totalTableOrderPayments)}`,
       `Ventas directas: ${money(summary?.totalPosSales)}`,
@@ -480,6 +860,48 @@ export default function CashRegisterPanel({
     doc.save(`reporte-caja-${cashSession?.sessionDate || "eureka"}.pdf`)
   }
 
+  const exportClosurePdf = (report: ClosureReport, autoDownload = false) => {
+    const doc = new jsPDF()
+    let y = 14
+    buildClosurePdfLines(report).forEach((line) => {
+      doc.text(line, 12, y)
+      y += 7
+    })
+    const filename = `cierre-caja-${report.reportDate}.pdf`
+    doc.save(filename)
+    if (!autoDownload) {
+      setSaveMessage(`Reporte ${filename} descargado.`)
+    }
+  }
+
+  const exportTableOrdersCsv = () => {
+    const header = ["Mesa", "Pedido", "Cliente", "Estado pedido", "Estado pago", "Metodo", "Factura", "NIT/CI", "Nombre factura", "Total"]
+    const rows = ordersByTable.flatMap((table) =>
+      table.orders.map((order) => [
+        table.tableLabel,
+        order.orderCode,
+        order.customerName,
+        order.orderStatus,
+        order.paymentStatus,
+        paymentLabels[order.paymentMethod],
+        order.invoiceRequired ? "Si" : "No",
+        order.invoiceDocument || "",
+        order.invoiceName || "",
+        order.total,
+      ]),
+    )
+
+    const csv = [header, ...rows]
+      .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
+      .join("\n")
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }))
+    const link = document.createElement("a")
+    link.href = url
+    link.download = `pedidos-mesas-${cashSession?.sessionDate || "eureka"}.csv`
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+
   const printReport = () => {
     window.print()
   }
@@ -497,6 +919,11 @@ export default function CashRegisterPanel({
           ) : (
             <span className="cash-status cash-status--closed">Sin caja abierta</span>
           )}
+          {!cashSession ? (
+            <button type="button" className="btn-approve" onClick={() => setOpeningModalOpen(true)} disabled={working}>
+              <FaCashRegister />Abrir caja
+            </button>
+          ) : null}
           <button type="button" className="btn-edit" onClick={() => loadCash()} disabled={working}>
             Actualizar
           </button>
@@ -507,12 +934,18 @@ export default function CashRegisterPanel({
         <div className="admin-panel-card cash-open-card">
           <div>
             <span className="admin-kicker">Apertura</span>
-            <h3>Abre la caja diaria</h3>
-            <p>No se pueden registrar ingresos, ventas o egresos hasta abrir caja.</p>
+            <h3>La caja aun no fue abierta</h3>
+            <p>No se pueden registrar ingresos, ventas, pedidos de mesas ni juegos hasta abrir caja.</p>
           </div>
-          <label>Monto inicial efectivo<input type="number" min="0" step="0.5" value={openingAmount} onChange={(event) => setOpeningAmount(event.target.value)} /></label>
-          <label>Notas<textarea value={openingNotes} onChange={(event) => setOpeningNotes(event.target.value)} /></label>
-          <button type="button" className="btn-approve" onClick={handleOpenCash} disabled={working}><FaCashRegister />Abrir caja</button>
+          <div className="cash-open-summary">
+            <span>Cajero/a</span>
+            <strong>{openingUserLabel}</strong>
+          </div>
+          <div className="cash-open-summary">
+            <span>Fecha y hora</span>
+            <strong>{dateTime(new Date().toISOString())}</strong>
+          </div>
+          <button type="button" className="btn-approve" onClick={() => setOpeningModalOpen(true)} disabled={working}><FaCashRegister />Abrir caja</button>
         </div>
       ) : null}
 
@@ -570,7 +1003,7 @@ export default function CashRegisterPanel({
 
       {activeTab === "pos" ? (
         <div className="cash-pos">
-          <section className="admin-panel-card">
+          <section className="admin-panel-card cash-pos-products">
             <div className="cash-form-grid cash-form-grid--tools">
               <div className="cash-search"><FaSearch /><input placeholder="Buscar producto" value={posSearch} onChange={(event) => setPosSearch(event.target.value)} /></div>
               <select value={posCategory} onChange={(event) => setPosCategory(event.target.value)}>
@@ -582,8 +1015,8 @@ export default function CashRegisterPanel({
             </div>
             <div className="cash-product-grid">
               {filteredProducts.map((product) => (
-                <button key={product.id} type="button" className="cash-product-tile" onClick={() => addToCart(product)}>
-                  {product.imagePath ? <img src={product.imagePath} alt={product.name} /> : <span />}
+                <button key={product.id} type="button" className="cash-product-tile" onClick={() => openPosProduct(product)}>
+                  <img src={resolveCatalogImage(product.imagePath)} alt={product.name} />
                   <strong>{product.name}</strong>
                   <em>{money(product.variants[0]?.price ?? product.basePrice)}</em>
                   {product.preparedStockLink ? (
@@ -596,10 +1029,10 @@ export default function CashRegisterPanel({
             </div>
           </section>
 
-          <aside className="admin-panel-card cash-cart">
-            <div className="admin-card-toolbar">
-              <strong>Carrito</strong>
-              <span>{cart.length} item(s)</span>
+          <aside className={`admin-panel-card cash-cart ${posCartOpen ? "is-open" : ""}`}>
+            <div className="cash-cart-header">
+              <h2>Tu pedido</h2>
+              <button type="button" className="cash-cart-close" onClick={() => setPosCartOpen(false)} aria-label="Cerrar pedido"><FaTimes /></button>
             </div>
             {cartDetails.length === 0 ? <p className="admin-template-help">Agrega productos para iniciar la venta.</p> : null}
             {cartDetails.map(({ item, product, variant, options, total }) => (
@@ -608,38 +1041,15 @@ export default function CashRegisterPanel({
                   <strong>{product?.name || "Producto"}</strong>
                   <button type="button" onClick={() => setCart((current) => current.filter((row) => row.key !== item.key))}><FaTimes /></button>
                 </div>
-                {product && product.variants.length > 0 ? (
-                  <select value={variant?.id || ""} onChange={(event) => updateCartItem(item.key, { variantId: event.target.value || null })}>
-                    {product.variants.filter((nextVariant) => nextVariant.isActive).map((nextVariant) => (
-                      <option key={nextVariant.id} value={nextVariant.id}>{nextVariant.name} - {money(nextVariant.price)}</option>
-                    ))}
-                  </select>
-                ) : null}
-                {product?.optionGroups.filter((group) => group.isActive).map((group) => (
-                  <div key={group.id} className="cash-options">
-                    <span>{group.name}</span>
-                    {group.options.filter((option) => option.isActive).map((option) => (
-                      <label key={option.id}>
-                        <input
-                          type="checkbox"
-                          checked={item.optionIds.includes(option.id)}
-                          onChange={(event) => {
-                            const nextOptions = event.target.checked
-                              ? [...item.optionIds, option.id]
-                              : item.optionIds.filter((optionId) => optionId !== option.id)
-                            updateCartItem(item.key, { optionIds: nextOptions })
-                          }}
-                        />
-                        {option.name} {option.extraPrice > 0 ? `+${money(option.extraPrice)}` : ""}
-                      </label>
-                    ))}
-                  </div>
-                ))}
+                <div className="cash-cart-item__meta">
+                  {variant ? <span>{variant.name} - {money(variant.price)}</span> : null}
+                  {options.length > 0 ? <span>{options.map((option) => option.name).join(", ")}</span> : null}
+                  {item.notes ? <small>{item.notes}</small> : null}
+                </div>
                 <div className="cash-cart-item__qty">
                   <input type="number" min="1" value={item.quantity} onChange={(event) => updateCartItem(item.key, { quantity: Math.max(1, Number(event.target.value || 1)) })} />
                   <strong>{money(total)}</strong>
                 </div>
-                {options.length > 0 ? <small>{options.map((option) => option.name).join(", ")}</small> : null}
               </article>
             ))}
             <div className="cash-total-box">
@@ -647,18 +1057,162 @@ export default function CashRegisterPanel({
               <label>Descuento<input type="number" min="0" step="0.5" value={posForm.discount} onChange={(event) => setPosForm({ ...posForm, discount: event.target.value })} /></label>
               <span>Total <strong>{money(cartTotal)}</strong></span>
             </div>
-            <div className="cash-form-grid">
+            <div className="cash-form-grid cash-form-grid--pair">
               <input placeholder="Cliente opcional" value={posForm.customerName} onChange={(event) => setPosForm({ ...posForm, customerName: event.target.value })} />
               <input placeholder="Telefono opcional" value={posForm.customerPhone} onChange={(event) => setPosForm({ ...posForm, customerPhone: event.target.value })} />
-              <select value={posForm.method} onChange={(event) => setPosForm({ ...posForm, method: event.target.value as CashPaymentMethod })}>
-                <option value="cash">Efectivo</option>
-                <option value="qr">QR</option>
-              </select>
             </div>
+            <div className="cash-payment-toggle">
+              <button type="button" className={posForm.method === "cash" ? "is-active" : ""} onClick={() => setPosForm({ ...posForm, method: "cash" })}>
+                Caja / efectivo
+              </button>
+              <button type="button" className={posForm.method === "qr" ? "is-active" : ""} onClick={() => setPosForm({ ...posForm, method: "qr" })}>
+                Pago QR
+              </button>
+            </div>
+            <label className="cash-invoice-toggle">
+              <span>¿Requiere factura?</span>
+              <input
+                type="checkbox"
+                checked={posForm.invoiceRequired}
+                onChange={(event) => {
+                  const checked = event.target.checked
+                  setPosForm({
+                    ...posForm,
+                    invoiceRequired: checked,
+                    invoiceDocument: checked ? posForm.invoiceDocument : "",
+                    invoiceName: checked ? posForm.invoiceName : "",
+                  })
+                }}
+              />
+            </label>
+            {posForm.invoiceRequired ? (
+              <div className="cash-invoice-fields">
+                <label>NIT / CI<input value={posForm.invoiceDocument} onChange={(event) => setPosForm({ ...posForm, invoiceDocument: event.target.value })} /></label>
+                <label>Nombre o razon social<input value={posForm.invoiceName} onChange={(event) => setPosForm({ ...posForm, invoiceName: event.target.value })} /></label>
+              </div>
+            ) : null}
             {posForm.method === "qr" ? <QrPaymentBlock qr={activePaymentQr} file={posReceipt} setFile={setPosReceipt} /> : null}
             <textarea placeholder="Nota opcional" value={posForm.notes} onChange={(event) => setPosForm({ ...posForm, notes: event.target.value })} />
-            <button type="button" className="btn-approve" onClick={handlePosSale} disabled={working || !isCashOpen}>Confirmar venta</button>
+            <button type="button" className="table-submit cash-submit" onClick={handlePosSale} disabled={working || !isCashOpen}>
+              {working ? "Procesando..." : "Confirmar pedido"}
+            </button>
           </aside>
+          {posCartOpen ? <button type="button" className="cash-cart-backdrop" onClick={() => setPosCartOpen(false)} aria-label="Cerrar pedido" /> : null}
+          <button
+            type="button"
+            className={`cash-mobile-cart-button ${posCartOpen || posProductDraft ? "is-hidden" : ""}`}
+            onClick={() => setPosCartOpen(true)}
+            aria-label="Ver pedido"
+          >
+            <span><FaShoppingCart /> Pedido ({cart.reduce((sum, item) => sum + item.quantity, 0)})</span>
+            <strong>{moneyLead(cartTotal)}</strong>
+          </button>
+        </div>
+      ) : null}
+
+      {activeTab === "gameCatalog" ? (
+        <div className="cash-two-col">
+          <section className="admin-panel-card cash-detail">
+            <div className="admin-card-toolbar">
+              <strong>Registrar juego</strong>
+              <span>Base para ventas rapidas</span>
+            </div>
+            <input placeholder="Nombre del juego" value={gameTemplateForm.name} onChange={(event) => setGameTemplateForm({ ...gameTemplateForm, name: event.target.value })} />
+            <div className="cash-form-grid">
+              <input placeholder="Precio base" inputMode="decimal" value={gameTemplateForm.defaultPrice} onChange={(event) => setGameTemplateForm({ ...gameTemplateForm, defaultPrice: sanitizeMoneyInput(event.target.value) })} />
+              <input placeholder="Personas base" type="number" min="1" value={gameTemplateForm.defaultPartySize} onChange={(event) => setGameTemplateForm({ ...gameTemplateForm, defaultPartySize: event.target.value })} />
+            </div>
+            <button type="button" className="btn-approve" onClick={handleGameTemplateCreate} disabled={working || !isCashOpen}>Guardar juego</button>
+          </section>
+          <section className="admin-panel-card">
+            <div className="admin-card-toolbar">
+              <strong>Juegos configurados</strong>
+              <span>{gameTemplates.length}</span>
+            </div>
+            <div className="cash-list cash-list--static">
+              {gameTemplates.map((template) => (
+                <article key={template.id} className="cash-template-item">
+                  <div className="cash-form-grid">
+                    <input value={template.name} onChange={(event) => setGameTemplates((current) => current.map((item) => item.id === template.id ? { ...item, name: event.target.value } : item))} />
+                    <input type="number" min="0" step="0.5" value={template.defaultPrice} onChange={(event) => setGameTemplates((current) => current.map((item) => item.id === template.id ? { ...item, defaultPrice: Number(event.target.value) } : item))} />
+                    <input type="number" min="1" value={template.defaultPartySize} onChange={(event) => setGameTemplates((current) => current.map((item) => item.id === template.id ? { ...item, defaultPartySize: Number(event.target.value) } : item))} />
+                  </div>
+                  <div className="admin-inline-actions">
+                    <label className="admin-switch"><input type="checkbox" checked={template.isActive} onChange={(event) => setGameTemplates((current) => current.map((item) => item.id === template.id ? { ...item, isActive: event.target.checked } : item))} />Activo</label>
+                    <button type="button" className="btn-edit" onClick={() => handleGameTemplateSave(template)} disabled={working || !isCashOpen}>Guardar</button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {activeTab === "gameSales" ? (
+        <div className="cash-two-col">
+          <section className="admin-panel-card cash-detail">
+            <div className="admin-card-toolbar">
+              <strong>Venta rapida de juegos</strong>
+              <span>Como caja, no como reserva</span>
+            </div>
+            <select value={walkInGameForm.templateId} onChange={(event) => setWalkInGameForm({ ...walkInGameForm, templateId: event.target.value, gameName: "", price: "0", partySize: "1" })}>
+              <option value="">Juego libre / personalizado</option>
+              {gameTemplates.filter((template) => template.isActive).map((template) => (
+                <option key={template.id} value={template.id}>{template.name}</option>
+              ))}
+            </select>
+            <div className="cash-form-grid">
+              <input placeholder="Nombre del juego" value={walkInGameForm.gameName} onChange={(event) => setWalkInGameForm({ ...walkInGameForm, gameName: event.target.value })} />
+              <input placeholder="Nombre del cliente" value={walkInGameForm.customerName} onChange={(event) => setWalkInGameForm({ ...walkInGameForm, customerName: event.target.value })} />
+              <input placeholder="WhatsApp" value={walkInGameForm.customerPhone} onChange={(event) => setWalkInGameForm({ ...walkInGameForm, customerPhone: event.target.value })} />
+            </div>
+            <div className="cash-form-grid">
+              <input placeholder="Personas" type="number" min="1" value={walkInGameForm.partySize} onChange={(event) => setWalkInGameForm({ ...walkInGameForm, partySize: event.target.value })} />
+              <input placeholder="Precio" inputMode="decimal" value={walkInGameForm.price} onChange={(event) => setWalkInGameForm({ ...walkInGameForm, price: sanitizeMoneyInput(event.target.value) })} />
+            </div>
+            <textarea placeholder="Notas del juego" value={walkInGameForm.notes} onChange={(event) => setWalkInGameForm({ ...walkInGameForm, notes: event.target.value })} />
+            <button type="button" className="btn-approve" onClick={handleWalkInGameCreate} disabled={working || !isCashOpen}>Crear venta de juego</button>
+          </section>
+          <section className="admin-panel-card">
+            <div className="admin-card-toolbar">
+              <strong>Juegos por cobrar</strong>
+              <span>{activeWalkInGames.filter((game) => game.paymentStatus !== "paid").length}</span>
+            </div>
+            <div className="cash-order-grid">
+              {activeWalkInGames.filter((game) => game.paymentStatus !== "paid").map((game) => {
+                const draft = gamePaymentDrafts[game.id] || {
+                  customerName: game.customerName || "",
+                  customerPhone: game.customerPhone || "",
+                  method: "cash" as CashPaymentMethod,
+                  notes: game.notes || "",
+                  file: null,
+                }
+
+                return (
+                  <article key={game.id} className="admin-reservation-card">
+                    <div className="admin-reservation-card__top">
+                      <strong>{game.gameName}</strong>
+                      <span className="status-pill status-pill--pending_payment">Pendiente de pago</span>
+                    </div>
+                    <p>{game.partySize} persona(s) | {money(game.price)}</p>
+                    <div className="cash-form-grid">
+                      <input placeholder="Nombre" value={draft.customerName} onChange={(event) => patchGamePaymentDraft(game.id, { customerName: event.target.value })} />
+                      <input placeholder="WhatsApp" value={draft.customerPhone} onChange={(event) => patchGamePaymentDraft(game.id, { customerPhone: event.target.value })} />
+                      <select value={draft.method} onChange={(event) => patchGamePaymentDraft(game.id, { method: event.target.value as CashPaymentMethod })}>
+                        <option value="cash">Efectivo</option>
+                        <option value="qr">QR</option>
+                      </select>
+                    </div>
+                    <textarea placeholder="Notas" value={draft.notes} onChange={(event) => patchGamePaymentDraft(game.id, { notes: event.target.value })} />
+                    {draft.method === "qr" ? (
+                      <QrPaymentBlock qr={activePaymentQr} file={draft.file} setFile={(file) => patchGamePaymentDraft(game.id, { file })} />
+                    ) : null}
+                    <button type="button" className="btn-approve" onClick={() => handleWalkInGamePayment(game)} disabled={working || !isCashOpen}>Cobrar juego</button>
+                  </article>
+                )
+              })}
+            </div>
+          </section>
         </div>
       ) : null}
 
@@ -704,32 +1258,62 @@ export default function CashRegisterPanel({
       ) : null}
 
       {activeTab === "orders" ? (
-        <div className="cash-order-grid">
-          {pendingOrders.length === 0 ? <div className="admin-empty-state"><strong>Sin pedidos pendientes de pago</strong></div> : null}
-          {pendingOrders.map((order) => (
-            <article key={order.id} className="admin-live-order">
-              <div className="admin-live-order__head">
-                <div>
-                  <h3>{order.orderCode}</h3>
-                  <p>Mesa {order.tableNumber || "-"} | {order.customerName}</p>
-                </div>
-                <strong>{money(order.total)}</strong>
-              </div>
-              <div className="admin-order-badges">
-                <span>{paymentLabels[order.paymentMethod]}</span>
-                <span>{order.paymentStatus}</span>
-                <span>{order.orderStatus}</span>
-              </div>
-              {order.receipts.filter((receipt) => !receipt.isDeleted).map((receipt) => (
-                <a key={receipt.id} className="admin-proof-link" href={receipt.imagePath} target="_blank" rel="noreferrer">Ver comprobante</a>
+        <div className="cash-two-col">
+          <section className="admin-panel-card">
+            <div className="admin-card-toolbar">
+              <strong>Resumen por mesa</strong>
+              <button type="button" className="btn-edit" onClick={exportTableOrdersCsv}><FaDownload />CSV mesas</button>
+            </div>
+            <div className="cash-list cash-list--static">
+              {ordersByTable.map((table) => (
+                <article key={table.tableLabel}>
+                  <div>
+                    <strong>{table.tableLabel}</strong>
+                    <span>{table.orderCount} pedido(s) | Pendiente {money(table.unpaidTotal)}</span>
+                  </div>
+                  <em>{money(table.total)}</em>
+                </article>
               ))}
-              <div className="admin-inline-actions">
-                <button type="button" className="btn-approve" onClick={() => handleOrderPayment(order, "cash")} disabled={working || !isCashOpen}>Pagado efectivo</button>
-                <button type="button" className="btn-edit" onClick={() => handleOrderPayment(order, "qr")} disabled={working || !isCashOpen}>Confirmar QR</button>
-                <a className="btn-whatsapp" href={`https://wa.me/${order.customerPhone}?text=${encodeURIComponent(`Hola ${order.customerName}, tu pedido ${order.orderCode} en Eureka esta en revision de pago.`)}`} target="_blank" rel="noreferrer">WhatsApp</a>
-              </div>
-            </article>
-          ))}
+            </div>
+          </section>
+          <section className="admin-panel-card">
+            <div className="admin-card-toolbar">
+              <strong>Pedidos pendientes de pago</strong>
+              <span>{pendingOrders.length}</span>
+            </div>
+            <div className="cash-order-grid">
+              {pendingOrders.length === 0 ? <div className="admin-empty-state"><strong>Sin pedidos pendientes de pago</strong></div> : null}
+              {pendingOrders.map((order) => (
+                <article key={order.id} className="admin-live-order">
+                  <div className="admin-live-order__head">
+                    <div>
+                      <h3>{order.orderCode}</h3>
+                      <p>Mesa {order.tableNumber || "-"} | {order.customerName}</p>
+                    </div>
+                    <strong>{money(order.total)}</strong>
+                  </div>
+                  <div className="admin-order-badges">
+                    <span>{paymentLabels[order.paymentMethod]}</span>
+                    <span>{order.paymentStatus}</span>
+                    <span>{order.orderStatus}</span>
+                  </div>
+                  {order.invoiceRequired ? (
+                    <p className="cash-invoice-summary">
+                      Factura: {order.invoiceDocument || "-"} | {order.invoiceName || "-"}
+                    </p>
+                  ) : null}
+                  {order.receipts.filter((receipt) => !receipt.isDeleted).map((receipt) => (
+                    <a key={receipt.id} className="admin-proof-link" href={receipt.imagePath} target="_blank" rel="noreferrer">Ver comprobante</a>
+                  ))}
+                  <div className="admin-inline-actions">
+                    <button type="button" className="btn-approve" onClick={() => handleOrderPayment(order, "cash")} disabled={working || !isCashOpen}>Pagado efectivo</button>
+                    <button type="button" className="btn-edit" onClick={() => handleOrderPayment(order, "qr")} disabled={working || !isCashOpen}>Confirmar QR</button>
+                    <a className="btn-whatsapp" href={`https://wa.me/${order.customerPhone}?text=${encodeURIComponent(`Hola ${order.customerName}, tu pedido ${order.orderCode} en Eureka esta en revision de pago.`)}`} target="_blank" rel="noreferrer">WhatsApp</a>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
         </div>
       ) : null}
 
@@ -792,6 +1376,7 @@ export default function CashRegisterPanel({
             <span>Egresos <strong>{money(summary?.totalExpenses)}</strong></span>
             <span>Total general <strong>{money(summary?.grossIncome)}</strong></span>
           </div>
+          <input placeholder="Nombre de quien cierra" value={closingOperatorName} onChange={(event) => setClosingOperatorName(event.target.value)} />
           <input placeholder="Efectivo contado fisicamente" type="number" min="0" step="0.5" value={closingCash} onChange={(event) => setClosingCash(event.target.value)} />
           <textarea placeholder="Notas de cierre" value={closingNotes} onChange={(event) => setClosingNotes(event.target.value)} />
           <div className="admin-inline-actions">
@@ -812,21 +1397,63 @@ export default function CashRegisterPanel({
             <div className="cash-list cash-list--static">
               {sessions.map((session) => (
                 <article key={session.id}>
-                  <strong>{session.sessionDate} | {session.status}</strong>
-                  <span>Abre: {session.openedByEmail || "-"} | Cierra: {session.closedByEmail || "-"}</span>
-                  <em>{money(session.expectedCashAmount ?? session.openingCashAmount)}</em>
+                  <div>
+                    <strong>{session.sessionDate} | {session.status}</strong>
+                    <span>Abre: {session.openingOperatorName || session.openedByEmail || "-"} | Cierra: {session.closingOperatorName || session.closedByEmail || "-"}</span>
+                    {session.openingBalanceReason ? <span>Saldo negativo: {session.openingBalanceReason}</span> : null}
+                  </div>
+                  <div className="cash-report-actions">
+                    <em>{money(session.expectedCashAmount ?? session.openingCashAmount)}</em>
+                    {closureReports.find((report) => report.cashSessionId === session.id) ? (
+                      <button
+                        type="button"
+                        className="btn-edit"
+                        onClick={() => {
+                          const report = closureReports.find((item) => item.cashSessionId === session.id)
+                          if (report) exportClosurePdf(report)
+                        }}
+                      >
+                        <FaDownload />PDF
+                      </button>
+                    ) : null}
+                  </div>
                 </article>
               ))}
             </div>
           </section>
           <section className="admin-panel-card">
-            <strong>Reportes cerrados</strong>
+            <div className="admin-card-toolbar">
+              <strong>Reportes cerrados</strong>
+              <button type="button" className="btn-edit" onClick={exportTableOrdersCsv}><FaDownload />CSV pedidos mesas</button>
+            </div>
             <div className="cash-list cash-list--static">
               {closureReports.map((report) => (
                 <article key={report.id}>
-                  <strong>{report.reportDate}</strong>
-                  <span>Cerrado: {dateTime(report.closedAt)}</span>
-                  <em>Diferencia {money(report.differenceAmount)}</em>
+                  <div>
+                    <strong>{report.reportDate}</strong>
+                    <span>Apertura: {report.openingOperatorName || "-"} | Cierre: {report.closingOperatorName || report.closedByEmail || "-"}</span>
+                    <span>Cerrado: {dateTime(report.closedAt)}</span>
+                    <span>Ventas: {money(report.totalPosSales + report.totalReservationPayments + report.totalTableOrderPayments)}</span>
+                  </div>
+                  <div className="cash-report-actions">
+                    <em>Diferencia {money(report.differenceAmount)}</em>
+                    <button type="button" className="btn-edit" onClick={() => exportClosurePdf(report)}><FaDownload />PDF</button>
+                  </div>
+                </article>
+              ))}
+            </div>
+            <div className="admin-card-toolbar">
+              <strong>Detalle actual por mesa</strong>
+              <span>{ordersByTable.length} mesa(s)</span>
+            </div>
+            <div className="cash-list cash-list--static">
+              {ordersByTable.map((table) => (
+                <article key={`report-${table.tableLabel}`}>
+                  <div>
+                    <strong>{table.tableLabel}</strong>
+                    <span>{table.orders.map((order) => `${order.orderCode} (${money(order.total)})`).join(", ")}</span>
+                  </div>
+                  <em>{money(table.total)}</em>
                 </article>
               ))}
             </div>
@@ -835,34 +1462,216 @@ export default function CashRegisterPanel({
       ) : null}
 
       {activeTab === "games" ? (
-        <section className="admin-panel-card">
-          <div className="admin-card-toolbar">
-            <strong>Reservas confirmadas / en juego</strong>
-            <span>{gameTick >= 0 ? "Timer activo" : ""}</span>
+        <div className="cash-two-col">
+          <section className="admin-panel-card">
+            <div className="admin-card-toolbar">
+              <strong>Juegos sin reserva en curso</strong>
+              <span>{activeWalkInGames.filter((game) => game.paymentStatus === "paid").length}</span>
+            </div>
+            <div className="cash-order-grid">
+              {activeWalkInGames.filter((game) => game.paymentStatus === "paid").map((game) => {
+                const elapsed = game.startedAt
+                  ? Math.max(0, Math.floor(((game.finishedAt ? new Date(game.finishedAt).getTime() : Date.now()) - new Date(game.startedAt).getTime()) / 60000))
+                  : 0
+
+                return (
+                  <article key={game.id} className="admin-reservation-card">
+                    <div className="admin-reservation-card__top">
+                      <strong>{game.gameName}</strong>
+                      <span className={`status-pill status-pill--${game.status === "in_game" ? "in_game" : "confirmed"}`}>
+                        {game.status === "paid" ? "Listo para iniciar" : game.status}
+                      </span>
+                    </div>
+                    <p>{game.customerName || "Sin nombre"} | {game.customerPhone || "Sin WhatsApp"}</p>
+                    <p>{game.partySize} persona(s) | {money(game.price)}</p>
+                    <p>Inicio real: {dateTime(game.startedAt)} | Tiempo: {game.startedAt ? minutesLabel(elapsed) : "-"}</p>
+                    <div className="admin-inline-actions">
+                      {game.receiptImagePath && !game.receiptDeletedAt ? (
+                        <a className="admin-proof-link" href={game.receiptImagePath} target="_blank" rel="noreferrer">Ver comprobante</a>
+                      ) : null}
+                      <button type="button" className="btn-approve" onClick={() => handleWalkInGameStatus(game.id, "start")} disabled={working || game.status === "in_game"}><FaPlay />Iniciar</button>
+                      <button type="button" className="btn-edit" onClick={() => handleWalkInGameStatus(game.id, "finish")} disabled={working || game.status !== "in_game"}><FaStop />Finalizar</button>
+                    </div>
+                  </article>
+                )
+              })}
+            </div>
+
+            {completedWalkInGames.length > 0 ? (
+              <>
+                <div className="admin-card-toolbar">
+                  <strong>Juegos completados hoy</strong>
+                  <span>{completedWalkInGames.length}</span>
+                </div>
+                <div className="cash-list cash-list--static">
+                  {completedWalkInGames.slice(0, 8).map((game) => (
+                    <article key={game.id}>
+                      <strong>{game.gameName}</strong>
+                      <span>{game.customerName || "Sin nombre"} | {game.partySize} persona(s)</span>
+                      <em>{money(game.price)}</em>
+                    </article>
+                  ))}
+                </div>
+              </>
+            ) : null}
+          </section>
+
+          <section className="admin-panel-card">
+            <div className="admin-card-toolbar">
+              <strong>Reservas confirmadas / en juego</strong>
+              <span>{activeGameBookings.length} reserva(s)</span>
+            </div>
+            <div className="cash-order-grid">
+              {activeGameBookings.map((booking) => {
+                const elapsed = booking.startedAt
+                  ? Math.max(0, Math.floor(((booking.finishedAt ? new Date(booking.finishedAt).getTime() : Date.now()) - new Date(booking.startedAt).getTime()) / 60000))
+                  : 0
+                return (
+                  <article key={booking.id} className="admin-reservation-card">
+                    <div className="admin-reservation-card__top">
+                      <strong>{booking.fullName}</strong>
+                      <span className={`status-pill status-pill--${booking.status}`}>{booking.status}</span>
+                    </div>
+                    <p>{booking.phone} | {dateTime(booking.startsAt)}</p>
+                    <p>Inicio real: {dateTime(booking.startedAt)} | Tiempo: {booking.startedAt ? minutesLabel(elapsed) : "-"}</p>
+                    <div className="admin-inline-actions">
+                      <button type="button" className="btn-approve" onClick={() => handleGameAction(booking.id, "start")} disabled={booking.status === "in_game"}><FaPlay />Iniciar</button>
+                      <button type="button" className="btn-edit" onClick={() => handleGameAction(booking.id, "finish")} disabled={booking.status !== "in_game"}><FaStop />Finalizar</button>
+                      <button type="button" className="btn-reject" onClick={() => handleGameAction(booking.id, "no_show")}>No asistio</button>
+                    </div>
+                  </article>
+                )
+              })}
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {openingModalOpen ? (
+        <div className="admin-modal">
+          <div className="admin-modal-card">
+            <div className="admin-modal-head">
+              <div>
+                <span className="admin-kicker">Apertura de caja</span>
+                <h2>Iniciar turno</h2>
+              </div>
+              <button type="button" className="admin-modal-close" onClick={() => setOpeningModalOpen(false)}><FaTimes /></button>
+            </div>
+            <div className="admin-modal-form">
+              <div className="cash-open-summary-grid">
+                <div className="cash-open-summary">
+                  <span>Cajero/a</span>
+                  <strong>{openingUserLabel}</strong>
+                </div>
+                <div className="cash-open-summary">
+                  <span>Fecha y hora</span>
+                  <strong>{dateTime(new Date().toISOString())}</strong>
+                </div>
+              </div>
+              <label>Monto inicial en efectivo
+                <input
+                  inputMode="decimal"
+                  placeholder="0.00"
+                  value={openingAmount}
+                  onChange={(event) => setOpeningAmount(sanitizeMoneyInput(event.target.value, true))}
+                />
+              </label>
+              <label>Nombre de quien abre
+                <input
+                  placeholder="Ej. Valeria"
+                  value={openingOperatorName}
+                  onChange={(event) => setOpeningOperatorName(event.target.value)}
+                />
+              </label>
+              {Number(openingAmount || 0) < 0 ? (
+                <label>Motivo del saldo negativo
+                  <textarea value={openingBalanceReason} onChange={(event) => setOpeningBalanceReason(event.target.value)} />
+                </label>
+              ) : null}
+              <label>Observaciones
+                <textarea value={openingNotes} onChange={(event) => setOpeningNotes(event.target.value)} />
+              </label>
+              <div className="admin-inline-actions">
+                <button type="button" className="btn-reject" onClick={() => setOpeningModalOpen(false)}>Cancelar</button>
+                <button type="button" className="btn-approve" onClick={handleOpenCash} disabled={working}><FaCashRegister />Abrir caja</button>
+              </div>
+            </div>
           </div>
-          <div className="cash-order-grid">
-            {activeGameBookings.map((booking) => {
-              const elapsed = booking.startedAt
-                ? Math.max(0, Math.floor(((booking.finishedAt ? new Date(booking.finishedAt).getTime() : Date.now()) - new Date(booking.startedAt).getTime()) / 60000))
-                : 0
-              return (
-                <article key={booking.id} className="admin-reservation-card">
-                  <div className="admin-reservation-card__top">
-                    <strong>{booking.fullName}</strong>
-                    <span className={`status-pill status-pill--${booking.status}`}>{booking.status}</span>
-                  </div>
-                  <p>{booking.phone} | {dateTime(booking.startsAt)}</p>
-                  <p>Inicio real: {dateTime(booking.startedAt)} | Tiempo: {booking.startedAt ? minutesLabel(elapsed) : "-"}</p>
-                  <div className="admin-inline-actions">
-                    <button type="button" className="btn-approve" onClick={() => handleGameAction(booking.id, "start")} disabled={booking.status === "in_game"}><FaPlay />Iniciar</button>
-                    <button type="button" className="btn-edit" onClick={() => handleGameAction(booking.id, "finish")} disabled={booking.status !== "in_game"}><FaStop />Finalizar</button>
-                    <button type="button" className="btn-reject" onClick={() => handleGameAction(booking.id, "no_show")}>No asistio</button>
-                  </div>
-                </article>
-              )
-            })}
+        </div>
+      ) : null}
+
+      {posProductDraft ? (
+        <div className="admin-modal">
+          <div className="admin-modal-card cash-pos-product-modal">
+            <div className="admin-modal-head">
+              <div>
+                <span className="admin-kicker">Venta rapida</span>
+                <h2>{posProductDraft.product.name}</h2>
+              </div>
+              <button type="button" className="admin-modal-close" onClick={() => setPosProductDraft(null)}><FaTimes /></button>
+            </div>
+            <div className="cash-pos-product-preview">
+              <img src={resolveCatalogImage(posProductDraft.product.imagePath)} alt={posProductDraft.product.name} />
+              <div>
+                <strong>{money(posProductDraft.product.variants.find((variant) => variant.id === posProductDraft.variantId)?.price ?? posProductDraft.product.basePrice)}</strong>
+                <span>{posProductDraft.product.description || "Producto para venta directa."}</span>
+              </div>
+            </div>
+            <div className="admin-modal-form">
+              {posProductDraft.product.variants.filter((variant) => variant.isActive).length > 0 ? (
+                <label>Variante
+                  <select
+                    value={posProductDraft.variantId || ""}
+                    onChange={(event) => setPosProductDraft({ ...posProductDraft, variantId: event.target.value || null })}
+                  >
+                    {posProductDraft.product.variants.filter((variant) => variant.isActive).map((variant) => (
+                      <option key={variant.id} value={variant.id}>{variant.name} - {money(variant.price)}</option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+
+              {posProductDraft.product.optionGroups.filter((group) => group.isActive).map((group) => (
+                <div key={group.id} className="cash-pos-option-group">
+                  <strong>{group.name}</strong>
+                  {group.options.filter((option) => option.isActive).map((option) => (
+                    <label key={option.id}>
+                      <input
+                        type={group.selectionType === "single" ? "radio" : "checkbox"}
+                        name={`pos-option-${group.id}`}
+                        checked={posProductDraft.optionIds.includes(option.id)}
+                        onChange={(event) => togglePosDraftOption(group.id, option.id, event.target.checked)}
+                      />
+                      {option.name} {option.extraPrice > 0 ? `+${money(option.extraPrice)}` : ""}
+                    </label>
+                  ))}
+                </div>
+              ))}
+
+              <div className="cash-pos-quantity">
+                <button
+                  type="button"
+                  onClick={() => setPosProductDraft({ ...posProductDraft, quantity: Math.max(1, posProductDraft.quantity - 1) })}
+                >
+                  -
+                </button>
+                <strong>{posProductDraft.quantity}</strong>
+                <button
+                  type="button"
+                  onClick={() => setPosProductDraft({ ...posProductDraft, quantity: posProductDraft.quantity + 1 })}
+                >
+                  +
+                </button>
+              </div>
+              <label>Nota
+                <textarea value={posProductDraft.notes} onChange={(event) => setPosProductDraft({ ...posProductDraft, notes: event.target.value })} />
+              </label>
+              <button type="button" className="btn-approve" onClick={() => addToCart(posProductDraft)}>
+                Agregar al carrito
+              </button>
+            </div>
           </div>
-        </section>
+        </div>
       ) : null}
 
       {cancelModal ? (

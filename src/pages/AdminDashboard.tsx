@@ -111,6 +111,7 @@ import {
   type SuperAdminOverview,
 } from "../lib/adminDashboardService"
 import { getCurrentAdminProfile, type CurrentAdminProfile } from "../lib/adminAuth"
+import { resolveCatalogImage } from "../lib/contentService"
 import { supabase } from "../lib/supabaseClient"
 import "../styles/AdminDashboard.css"
 
@@ -156,6 +157,18 @@ type AdminEditorModal =
   | { type: "product"; id: string }
   | { type: "table"; id: string }
   | null
+
+type ProductCategoryDraft = Omit<AdminProductCategory, "id" | "createdAt" | "slug"> & {
+  id: string
+  slug: string
+  createdAt: string
+}
+
+type ProductDraft = Omit<AdminProduct, "id" | "createdAt" | "slug"> & {
+  id: string
+  slug: string
+  createdAt: string
+}
 
 type AdminSection =
   | "overview"
@@ -409,6 +422,8 @@ export default function AdminDashboard() {
   const [orderSoundEnabled, setOrderSoundEnabled] = useState(false)
   const [clockTick, setClockTick] = useState(0)
   const [editorModal, setEditorModal] = useState<AdminEditorModal>(null)
+  const [draftProductCategory, setDraftProductCategory] = useState<ProductCategoryDraft | null>(null)
+  const [draftProduct, setDraftProduct] = useState<ProductDraft | null>(null)
   const [superAdminConfirmAction, setSuperAdminConfirmAction] = useState<SuperAdminConfirmAction | null>(null)
   const [superAdminConfirmation, setSuperAdminConfirmation] = useState("")
   const [superAdminWorking, setSuperAdminWorking] = useState(false)
@@ -560,12 +575,16 @@ export default function AdminDashboard() {
   }, [selectedDate])
 
   useEffect(() => {
+    if (editorModal || draftProductCategory || draftProduct) {
+      return
+    }
+
     const timer = window.setInterval(() => {
       loadDashboard(selectedDate, false).catch((error) => console.error(error))
     }, 15000)
 
     return () => window.clearInterval(timer)
-  }, [selectedDate])
+  }, [draftProduct, draftProductCategory, editorModal, selectedDate])
 
   useEffect(() => {
     setSidebarOpen(false)
@@ -1083,33 +1102,70 @@ export default function AdminDashboard() {
     }
   }
 
-  const handleProductCategoryCreate = async () => {
-    try {
-      await createProductCategory({
-        name: "Nueva categoria",
-        sortOrder: productCategories.length + 1,
-      })
-      setSaveMessage("Categoria creada.")
-      await loadDashboard(selectedDate, false)
-    } catch (error) {
-      setSaveMessage(error instanceof Error ? error.message : "No se pudo crear la categoria.")
+  const closeCatalogModal = () => {
+    setEditorModal(null)
+    setDraftProductCategory(null)
+    setDraftProduct(null)
+  }
+
+  const handleProductCategoryCreate = () => {
+    const draftId = `draft-category-${Date.now()}`
+    setDraftProductCategory({
+      id: draftId,
+      name: "",
+      slug: "",
+      description: "",
+      imagePath: null,
+      sortOrder: productCategories.length + 1,
+      isActive: true,
+      createdAt: new Date().toISOString(),
+    })
+    setEditorModal({ type: "productCategory", id: draftId })
+  }
+
+  const patchProductCategoryDraft = (patch: Partial<AdminProductCategory>) => {
+    if (draftProductCategory) {
+      setDraftProductCategory({ ...draftProductCategory, ...patch })
+      return
+    }
+
+    if (editingProductCategory) {
+      setProductCategories((current) =>
+        current.map((item) => (item.id === editingProductCategory.id ? { ...item, ...patch } : item)),
+      )
     }
   }
 
-  const handleProductCategorySave = async (category: AdminProductCategory) => {
+  const handleProductCategorySubmit = async (category: AdminProductCategory) => {
     if (!category.name.trim()) {
       setSaveMessage("El nombre de la categoria es obligatorio.")
       return
     }
 
     try {
-      await updateProductCategory(category.id, category)
-      setSaveMessage("Categoria guardada.")
-      setEditorModal(null)
+      if (draftProductCategory && category.id === draftProductCategory.id) {
+        await createProductCategory({
+          name: category.name,
+          description: category.description,
+          imagePath: category.imagePath,
+          sortOrder: category.sortOrder,
+          isActive: category.isActive,
+        })
+        setSaveMessage("Categoria creada.")
+      } else {
+        await updateProductCategory(category.id, category)
+        setSaveMessage("Categoria guardada.")
+      }
+
+      closeCatalogModal()
       await loadDashboard(selectedDate, false)
     } catch (error) {
       setSaveMessage(error instanceof Error ? error.message : "No se pudo guardar la categoria.")
     }
+  }
+
+  const handleProductCategorySave = async (category: AdminProductCategory) => {
+    await handleProductCategorySubmit(category)
   }
 
   const handleProductCategoryDelete = async (category: AdminProductCategory) => {
@@ -1135,21 +1191,20 @@ export default function AdminDashboard() {
     }
   }
 
-  const handleProductCategoryUpload = async (category: AdminProductCategory, file: File | undefined) => {
+  const handleProductCategoryUpload = async (_category: AdminProductCategory, file: File | undefined) => {
     if (!file) return
 
     try {
       validateCatalogImage(file)
       const imagePath = await uploadAdminImage("products", file)
-      await updateProductCategory(category.id, { imagePath })
-      setSaveMessage("Imagen de categoria subida.")
-      await loadDashboard(selectedDate, false)
+      patchProductCategoryDraft({ imagePath })
+      setSaveMessage("Imagen lista para guardar.")
     } catch (error) {
       setSaveMessage(error instanceof Error ? error.message : "No se pudo subir la imagen.")
     }
   }
 
-  const handleProductCreate = async () => {
+  const handleProductCreate = () => {
     const categoryId =
       selectedProductCategoryId !== "all" ? selectedProductCategoryId : productCategories[0]?.id
 
@@ -1158,20 +1213,41 @@ export default function AdminDashboard() {
       return
     }
 
-    try {
-      await createProduct(categoryId, {
-        name: "Nuevo producto",
-        sortOrder: products.filter((product) => product.categoryId === categoryId).length + 1,
-      })
-      setSelectedProductCategoryId(categoryId)
-      setSaveMessage("Producto creado.")
-      await loadDashboard(selectedDate, false)
-    } catch (error) {
-      setSaveMessage(error instanceof Error ? error.message : "No se pudo crear el producto.")
+    const draftId = `draft-product-${Date.now()}`
+    setDraftProduct({
+      id: draftId,
+      categoryId,
+      name: "",
+      slug: "",
+      description: "",
+      basePrice: 0,
+      imagePath: null,
+      productType: "simple",
+      isActive: true,
+      isFeatured: false,
+      sortOrder: products.filter((product) => product.categoryId === categoryId).length + 1,
+      createdAt: new Date().toISOString(),
+      variants: [],
+      optionGroups: [],
+      preparedStockLink: null,
+    })
+    setEditorModal({ type: "product", id: draftId })
+  }
+
+  const patchProductDraft = (patch: Partial<AdminProduct>) => {
+    if (draftProduct) {
+      setDraftProduct({ ...draftProduct, ...patch })
+      return
+    }
+
+    if (editingProduct) {
+      setProducts((current) =>
+        current.map((item) => (item.id === editingProduct.id ? { ...item, ...patch } : item)),
+      )
     }
   }
 
-  const handleProductSave = async (product: AdminProduct) => {
+  const handleProductSubmit = async (product: AdminProduct) => {
     if (!product.name.trim()) {
       setSaveMessage("El nombre del producto es obligatorio.")
       return
@@ -1200,13 +1276,33 @@ export default function AdminDashboard() {
     }
 
     try {
-      await updateProduct(product.id, product)
-      setSaveMessage("Producto guardado.")
-      setEditorModal(null)
+      if (draftProduct && product.id === draftProduct.id) {
+        await createProduct(product.categoryId, {
+          name: product.name,
+          description: product.description,
+          basePrice: product.basePrice,
+          imagePath: product.imagePath,
+          productType: product.productType,
+          isActive: product.isActive,
+          isFeatured: product.isFeatured,
+          sortOrder: product.sortOrder,
+        })
+        setSelectedProductCategoryId(product.categoryId)
+        setSaveMessage("Producto creado.")
+      } else {
+        await updateProduct(product.id, product)
+        setSaveMessage("Producto guardado.")
+      }
+
+      closeCatalogModal()
       await loadDashboard(selectedDate, false)
     } catch (error) {
       setSaveMessage(error instanceof Error ? error.message : "No se pudo guardar el producto.")
     }
+  }
+
+  const handleProductSave = async (product: AdminProduct) => {
+    await handleProductSubmit(product)
   }
 
   const handleProductDelete = async (product: AdminProduct) => {
@@ -1223,15 +1319,14 @@ export default function AdminDashboard() {
     }
   }
 
-  const handleProductUpload = async (product: AdminProduct, file: File | undefined) => {
+  const handleProductUpload = async (_product: AdminProduct, file: File | undefined) => {
     if (!file) return
 
     try {
       validateCatalogImage(file)
       const imagePath = await uploadAdminImage("products", file)
-      await updateProduct(product.id, { imagePath })
-      setSaveMessage("Imagen del producto subida.")
-      await loadDashboard(selectedDate, false)
+      patchProductDraft({ imagePath })
+      setSaveMessage("Imagen lista para guardar.")
     } catch (error) {
       setSaveMessage(error instanceof Error ? error.message : "No se pudo subir la imagen.")
     }
@@ -1691,8 +1786,16 @@ export default function AdminDashboard() {
   const editingNovelty = editorModal?.type === "novelty" ? noveltyItems.find((item) => item.id === editorModal.id) : null
   const editingPedidosYa = editorModal?.type === "pedidosya" ? pedidosYaPromo : null
   const editingPaymentQr = editorModal?.type === "paymentQr" ? paymentQrs.find((item) => item.id === editorModal.id) : null
-  const editingProductCategory = editorModal?.type === "productCategory" ? productCategories.find((item) => item.id === editorModal.id) : null
-  const editingProduct = editorModal?.type === "product" ? products.find((item) => item.id === editorModal.id) : null
+  const editingProductCategory = editorModal?.type === "productCategory"
+    ? (editorModal.id === draftProductCategory?.id
+        ? draftProductCategory
+        : productCategories.find((item) => item.id === editorModal.id)) || null
+    : null
+  const editingProduct = editorModal?.type === "product"
+    ? (editorModal.id === draftProduct?.id
+        ? draftProduct
+        : products.find((item) => item.id === editorModal.id)) || null
+    : null
   const editingTable = editorModal?.type === "table" ? restaurantTables.find((item) => item.id === editorModal.id) : null
   const activePaymentQr = paymentQrs.find((qr) => qr.isActive) || null
   const qrExpiryAlerts = paymentQrs
@@ -1710,6 +1813,15 @@ export default function AdminDashboard() {
 
     return matchesSearch && matchesCategory && matchesStatus
   })
+  const selectedCategory = selectedProductCategoryId === "all"
+    ? null
+    : productCategories.find((category) => category.id === selectedProductCategoryId) || null
+  const selectedCategoryProducts = selectedCategory
+    ? visibleProducts.filter((product) => product.categoryId === selectedCategory.id)
+    : visibleProducts
+  const selectedCategoryProductCount = selectedCategory
+    ? products.filter((product) => product.categoryId === selectedCategory.id).length
+    : products.length
   const activeLiveOrders = liveOrders.filter((order) => order.orderStatus !== "delivered")
   const deliveredLiveOrders = liveOrders.filter((order) => order.orderStatus === "delivered")
   const visibleLiveOrders = orderBoardMode === "active" ? activeLiveOrders : deliveredLiveOrders
@@ -2691,10 +2803,6 @@ export default function AdminDashboard() {
                   <FaPlus />
                   <span>Nueva categoria</span>
                 </button>
-                <button type="button" className="btn-edit" onClick={handleProductCreate}>
-                  <FaPlus />
-                  <span>Nuevo producto</span>
-                </button>
               </div>
             </div>
 
@@ -2750,34 +2858,74 @@ export default function AdminDashboard() {
                   <span>{products.length}</span>
                 </button>
                 {productCategories.map((category) => (
-                  <article key={category.id} className={!category.isActive ? "is-muted" : ""}>
-                    {category.imagePath ? <img src={category.imagePath} alt={category.name} /> : <FaTags />}
-                    <div>
-                      <strong>{category.name}</strong>
-                      <span>
-                        {products.filter((product) => product.categoryId === category.id).length} productos
-                      </span>
-                    </div>
-                    <button type="button" className="btn-edit" onClick={() => setEditorModal({ type: "productCategory", id: category.id })}>
-                      <FaEdit />
+                  <article
+                    key={category.id}
+                    className={`admin-category-card ${selectedProductCategoryId === category.id ? "is-active" : ""} ${!category.isActive ? "is-muted" : ""}`}
+                  >
+                    <button
+                      type="button"
+                      className="admin-category-card__main"
+                      onClick={() => setSelectedProductCategoryId(category.id)}
+                    >
+                      <img src={resolveCatalogImage(category.imagePath)} alt={category.name} />
+                      <div>
+                        <strong>{category.name}</strong>
+                        <span>
+                          {products.filter((product) => product.categoryId === category.id).length} productos
+                        </span>
+                      </div>
                     </button>
-                    {isSuperAdmin ? (
-                      <button type="button" className="btn-reject" onClick={() => handleProductCategoryDelete(category)}>
-                        <FaTrash />
+                    <div className="admin-category-card__actions">
+                      <button
+                        type="button"
+                        className="btn-edit"
+                        onClick={() => setEditorModal({ type: "productCategory", id: category.id })}
+                      >
+                        <FaEdit />
                       </button>
-                    ) : null}
+                      {isSuperAdmin ? (
+                        <button
+                          type="button"
+                          className="btn-reject"
+                          onClick={() => handleProductCategoryDelete(category)}
+                        >
+                          <FaTrash />
+                        </button>
+                      ) : null}
+                    </div>
                   </article>
                 ))}
               </div>
             </section>
 
-            <div className={`admin-product-grid admin-product-grid--${productViewMode}`}>
-              {visibleProducts.length === 0 ? (
+            <section className="admin-panel-card">
+              <div className="admin-section-heading">
+                <div>
+                  <span className="admin-kicker">Productos</span>
+                  <h2>{selectedCategory ? selectedCategory.name : "Todos los productos"}</h2>
+                  <p className="admin-template-help">
+                    {selectedCategory
+                      ? `${selectedCategoryProductCount} producto(s) dentro de esta categoria.`
+                      : "Selecciona una categoria para enfocarte y crear productos ahi dentro."}
+                  </p>
+                </div>
+                {selectedCategory ? (
+                  <div className="admin-inline-actions">
+                    <button type="button" className="btn-edit" onClick={handleProductCreate}>
+                      <FaPlus />
+                      <span>Nuevo producto</span>
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+
+              <div className={`admin-product-grid admin-product-grid--${productViewMode}`}>
+              {selectedCategoryProducts.length === 0 ? (
                 <section className="admin-panel-card">
                   <p className="admin-template-help">No hay productos para este filtro.</p>
                 </section>
               ) : null}
-              {visibleProducts.map((product) => {
+              {selectedCategoryProducts.map((product) => {
                 const category = categoryById.get(product.categoryId)
                 const priceLabel = product.variants.length > 0
                   ? `Desde Bs ${Math.min(...product.variants.map((variant) => variant.price)).toFixed(2)}`
@@ -2786,11 +2934,7 @@ export default function AdminDashboard() {
                 return (
                   <article key={product.id} className={`admin-product-card ${!product.isActive ? "is-muted" : ""}`}>
                     <div className="admin-product-image">
-                      {product.imagePath ? (
-                        <img src={product.imagePath} alt={product.name} />
-                      ) : (
-                        <FaTags />
-                      )}
+                      <img src={resolveCatalogImage(product.imagePath)} alt={product.name} />
                     </div>
                     <div className="admin-product-body">
                       <div className="admin-card-toolbar">
@@ -2835,7 +2979,8 @@ export default function AdminDashboard() {
                   </article>
                 )
               })}
-            </div>
+              </div>
+            </section>
           </section>
         ) : null}
 
@@ -3712,7 +3857,18 @@ export default function AdminDashboard() {
                     {editorModal.type === "table" ? "Mesa" : null}
                   </h2>
                 </div>
-                <button type="button" className="admin-modal-close" onClick={() => { setEditorModal(null); setQrSecret("") }}>
+                <button
+                  type="button"
+                  className="admin-modal-close"
+                  onClick={() => {
+                    if (editorModal.type === "productCategory" || editorModal.type === "product") {
+                      closeCatalogModal()
+                    } else {
+                      setEditorModal(null)
+                    }
+                    setQrSecret("")
+                  }}
+                >
                   <FaTimes />
                 </button>
               </div>
@@ -3803,20 +3959,21 @@ export default function AdminDashboard() {
 
               {editingProductCategory ? (
                 <div className="admin-modal-form">
-                  {editingProductCategory.imagePath ? (
-                    <div className="admin-preview-card">
-                      <img src={editingProductCategory.imagePath} alt={editingProductCategory.name} />
-                      <div><span>Categoria</span><strong>{editingProductCategory.name}</strong></div>
-                    </div>
-                  ) : null}
-                  <label>Nombre<input value={editingProductCategory.name} onChange={(event) => setProductCategories((current) => current.map((item) => item.id === editingProductCategory.id ? { ...item, name: event.target.value } : item))} /></label>
-                  <label>Descripcion<textarea value={editingProductCategory.description || ""} onChange={(event) => setProductCategories((current) => current.map((item) => item.id === editingProductCategory.id ? { ...item, description: event.target.value } : item))} /></label>
+                  <div className="admin-preview-card">
+                    <img src={resolveCatalogImage(editingProductCategory.imagePath)} alt={editingProductCategory.name || "Categoria"} />
+                    <div><span>Categoria</span><strong>{editingProductCategory.name || "Nueva categoria"}</strong></div>
+                  </div>
+                  <label>Nombre<input value={editingProductCategory.name} onChange={(event) => patchProductCategoryDraft({ name: event.target.value })} /></label>
+                  <label>Descripcion<textarea value={editingProductCategory.description || ""} onChange={(event) => patchProductCategoryDraft({ description: event.target.value })} /></label>
                   <label>Imagen<input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => handleProductCategoryUpload(editingProductCategory, event.target.files?.[0])} /></label>
                   <div className="admin-mini-grid">
-                    <label>Orden<input type="number" value={editingProductCategory.sortOrder} onChange={(event) => setProductCategories((current) => current.map((item) => item.id === editingProductCategory.id ? { ...item, sortOrder: Number(event.target.value) } : item))} /></label>
-                    <label className="admin-switch"><input type="checkbox" checked={editingProductCategory.isActive} onChange={(event) => setProductCategories((current) => current.map((item) => item.id === editingProductCategory.id ? { ...item, isActive: event.target.checked } : item))} />Activa</label>
+                    <label>Orden<input type="number" value={editingProductCategory.sortOrder} onChange={(event) => patchProductCategoryDraft({ sortOrder: Number(event.target.value) })} /></label>
+                    <label className="admin-switch"><input type="checkbox" checked={editingProductCategory.isActive} onChange={(event) => patchProductCategoryDraft({ isActive: event.target.checked })} />Activa</label>
                   </div>
-                  <button type="button" className="btn-edit" onClick={() => handleProductCategorySave(editingProductCategory)}><FaSave />Guardar categoria</button>
+                  <div className="admin-modal-actions">
+                    <button type="button" className="btn-reject" onClick={closeCatalogModal}><FaTimes />Cancelar</button>
+                    <button type="button" className="btn-edit" onClick={() => handleProductCategorySave(editingProductCategory)}><FaSave />Aceptar</button>
+                  </div>
                 </div>
               ) : null}
 
@@ -3824,25 +3981,29 @@ export default function AdminDashboard() {
                 <div className="admin-modal-form admin-product-editor">
                   <div className="admin-product-editor__top">
                     <div className="admin-preview-card">
-                      {editingProduct.imagePath ? <img src={editingProduct.imagePath} alt={editingProduct.name} /> : null}
-                      <div><span>{editingProduct.productType}</span><strong>{editingProduct.name}</strong></div>
+                      <img src={resolveCatalogImage(editingProduct.imagePath)} alt={editingProduct.name || "Producto"} />
+                      <div><span>{editingProduct.productType}</span><strong>{editingProduct.name || "Nuevo producto"}</strong></div>
                     </div>
                     <div className="admin-product-editor__fields">
-                      <label>Nombre<input value={editingProduct.name} onChange={(event) => setProducts((current) => current.map((item) => item.id === editingProduct.id ? { ...item, name: event.target.value } : item))} /></label>
-                      <label>Categoria<select value={editingProduct.categoryId} onChange={(event) => setProducts((current) => current.map((item) => item.id === editingProduct.id ? { ...item, categoryId: event.target.value } : item))}>{productCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
-                      <label>Descripcion<textarea value={editingProduct.description || ""} onChange={(event) => setProducts((current) => current.map((item) => item.id === editingProduct.id ? { ...item, description: event.target.value } : item))} /></label>
+                      <label>Nombre<input value={editingProduct.name} onChange={(event) => patchProductDraft({ name: event.target.value })} /></label>
+                      <label>Categoria<select value={editingProduct.categoryId} onChange={(event) => patchProductDraft({ categoryId: event.target.value })}>{productCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
+                      <label>Descripcion<textarea value={editingProduct.description || ""} onChange={(event) => patchProductDraft({ description: event.target.value })} /></label>
                     </div>
                   </div>
 
                   <div className="admin-mini-grid">
-                    <label>Precio base<input type="number" min="0" step="0.5" value={editingProduct.basePrice} onChange={(event) => setProducts((current) => current.map((item) => item.id === editingProduct.id ? { ...item, basePrice: Number(event.target.value) } : item))} /></label>
-                    <label>Tipo<select value={editingProduct.productType} onChange={(event) => setProducts((current) => current.map((item) => item.id === editingProduct.id ? { ...item, productType: event.target.value as AdminProduct["productType"] } : item))}><option value="simple">Simple</option><option value="combo">Combo</option></select></label>
-                    <label>Orden<input type="number" value={editingProduct.sortOrder} onChange={(event) => setProducts((current) => current.map((item) => item.id === editingProduct.id ? { ...item, sortOrder: Number(event.target.value) } : item))} /></label>
+                    <label>Precio base<input type="number" min="0" step="0.5" value={editingProduct.basePrice} onChange={(event) => patchProductDraft({ basePrice: Number(event.target.value) })} /></label>
+                    <label>Tipo<select value={editingProduct.productType} onChange={(event) => patchProductDraft({ productType: event.target.value as AdminProduct["productType"] })}><option value="simple">Simple</option><option value="combo">Combo</option></select></label>
+                    <label>Orden<input type="number" value={editingProduct.sortOrder} onChange={(event) => patchProductDraft({ sortOrder: Number(event.target.value) })} /></label>
                   </div>
                   <label>Imagen<input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => handleProductUpload(editingProduct, event.target.files?.[0])} /></label>
                   <div className="admin-inline-actions">
-                    <label className="admin-switch"><input type="checkbox" checked={editingProduct.isActive} onChange={(event) => setProducts((current) => current.map((item) => item.id === editingProduct.id ? { ...item, isActive: event.target.checked } : item))} />Activo</label>
-                    <label className="admin-switch"><input type="checkbox" checked={editingProduct.isFeatured} onChange={(event) => setProducts((current) => current.map((item) => item.id === editingProduct.id ? { ...item, isFeatured: event.target.checked } : item))} />Destacado</label>
+                    <label className="admin-switch"><input type="checkbox" checked={editingProduct.isActive} onChange={(event) => patchProductDraft({ isActive: event.target.checked })} />Activo</label>
+                    <label className="admin-switch"><input type="checkbox" checked={editingProduct.isFeatured} onChange={(event) => patchProductDraft({ isFeatured: event.target.checked })} />Destacado</label>
+                  </div>
+                  <div className="admin-modal-actions">
+                    <button type="button" className="btn-reject" onClick={closeCatalogModal}><FaTimes />Cancelar</button>
+                    <button type="button" className="btn-edit" onClick={() => handleProductSave(editingProduct)}><FaSave />Aceptar</button>
                   </div>
                   <section className="admin-product-editor-section">
                     <div className="admin-card-toolbar">
@@ -3853,28 +4014,22 @@ export default function AdminDashboard() {
                       <input
                         type="checkbox"
                         checked={Boolean(editingProduct.preparedStockLink)}
-                        onChange={(event) =>
-                          setProducts((current) =>
-                            current.map((item) =>
-                              item.id === editingProduct.id
-                                ? {
-                                    ...item,
-                                    preparedStockLink: event.target.checked
-                                      ? {
-                                          inventoryItemId: preparedInventoryItems.find((option) => option.isActive)?.id || "",
-                                          quantityPerSale: 1,
-                                          inventoryItemName: preparedInventoryItems.find((option) => option.isActive)?.name || "",
-                                          currentStock: preparedInventoryItems.find((option) => option.isActive)?.currentStock || 0,
-                                          minimumStock: preparedInventoryItems.find((option) => option.isActive)?.minimumStock || 0,
-                                          unitAbbreviation: preparedInventoryItems.find((option) => option.isActive)?.unitAbbreviation || "u",
-                                          inventoryItemActive: preparedInventoryItems.find((option) => option.isActive)?.isActive || false,
-                                        }
-                                      : null,
-                                  }
-                                : item,
-                            ),
-                          )
-                        }
+                        onChange={(event) => {
+                          const defaultPrepared = preparedInventoryItems.find((option) => option.isActive) || null
+                          patchProductDraft({
+                            preparedStockLink: event.target.checked
+                              ? {
+                                  inventoryItemId: defaultPrepared?.id || "",
+                                  quantityPerSale: 1,
+                                  inventoryItemName: defaultPrepared?.name || "",
+                                  currentStock: defaultPrepared?.currentStock || 0,
+                                  minimumStock: defaultPrepared?.minimumStock || 0,
+                                  unitAbbreviation: defaultPrepared?.unitAbbreviation || "u",
+                                  inventoryItemActive: defaultPrepared?.isActive || false,
+                                }
+                              : null,
+                          })
+                        }}
                       />
                       Descontar del inventario al vender
                     </label>
@@ -3887,26 +4042,19 @@ export default function AdminDashboard() {
                               value={editingProduct.preparedStockLink.inventoryItemId}
                               onChange={(event) => {
                                 const selectedItem = preparedInventoryItems.find((option) => option.id === event.target.value)
-                                setProducts((current) =>
-                                  current.map((item) =>
-                                    item.id === editingProduct.id
-                                      ? {
-                                          ...item,
-                                          preparedStockLink: selectedItem
-                                            ? {
-                                                inventoryItemId: selectedItem.id,
-                                                quantityPerSale: item.preparedStockLink?.quantityPerSale || 1,
-                                                inventoryItemName: selectedItem.name,
-                                                currentStock: selectedItem.currentStock,
-                                                minimumStock: selectedItem.minimumStock,
-                                                unitAbbreviation: selectedItem.unitAbbreviation,
-                                                inventoryItemActive: selectedItem.isActive,
-                                              }
-                                            : item.preparedStockLink,
-                                        }
-                                      : item,
-                                  ),
-                                )
+                                patchProductDraft({
+                                  preparedStockLink: selectedItem
+                                    ? {
+                                        inventoryItemId: selectedItem.id,
+                                        quantityPerSale: editingProduct.preparedStockLink?.quantityPerSale || 1,
+                                        inventoryItemName: selectedItem.name,
+                                        currentStock: selectedItem.currentStock,
+                                        minimumStock: selectedItem.minimumStock,
+                                        unitAbbreviation: selectedItem.unitAbbreviation,
+                                        inventoryItemActive: selectedItem.isActive,
+                                      }
+                                    : editingProduct.preparedStockLink,
+                                })
                               }}
                             >
                               <option value="">Selecciona un preparado</option>
@@ -3925,19 +4073,14 @@ export default function AdminDashboard() {
                               step="1"
                               value={editingProduct.preparedStockLink.quantityPerSale}
                               onChange={(event) =>
-                                setProducts((current) =>
-                                  current.map((item) =>
-                                    item.id === editingProduct.id && item.preparedStockLink
-                                      ? {
-                                          ...item,
-                                          preparedStockLink: {
-                                            ...item.preparedStockLink,
-                                            quantityPerSale: Math.max(0.001, Number(event.target.value || 1)),
-                                          },
-                                        }
-                                      : item,
-                                  ),
-                                )
+                                patchProductDraft({
+                                  preparedStockLink: editingProduct.preparedStockLink
+                                    ? {
+                                        ...editingProduct.preparedStockLink,
+                                        quantityPerSale: Math.max(0.001, Number(event.target.value || 1)),
+                                      }
+                                    : null,
+                                })
                               }
                             />
                           </label>
@@ -3950,8 +4093,8 @@ export default function AdminDashboard() {
                       </>
                     ) : null}
                   </section>
-                  <button type="button" className="btn-edit" onClick={() => handleProductSave(editingProduct)}><FaSave />Guardar producto</button>
 
+                  {!draftProduct ? (
                   <section className="admin-product-editor-section">
                     <div className="admin-card-toolbar">
                       <strong>Variantes</strong>
@@ -3976,7 +4119,9 @@ export default function AdminDashboard() {
                       </article>
                     ))}
                   </section>
+                  ) : null}
 
+                  {!draftProduct ? (
                   <section className="admin-product-editor-section">
                     <div className="admin-card-toolbar">
                       <strong>Opciones configurables</strong>
@@ -4014,6 +4159,7 @@ export default function AdminDashboard() {
                       </article>
                     ))}
                   </section>
+                  ) : null}
                 </div>
               ) : null}
 

@@ -19,6 +19,25 @@ body.table-cart-lock {
   overflow: hidden;
 }
 
+.table-invoice-toggle {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.table-cart .table-invoice-toggle input {
+  width: 18px;
+  height: 18px;
+  min-height: 18px;
+  padding: 0;
+  border: 0;
+  accent-color: #5f8742;
+}
+
+.table-invoice-fields {
+  display: grid;
+  gap: 0.65rem;
+}
+
 .table-menu-hero,
 .table-menu-layout,
 .table-menu-result,

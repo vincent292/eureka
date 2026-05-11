@@ -12,6 +12,7 @@ import {
   type PublicPaymentQr,
   type PublicRestaurantTable,
 } from "../lib/tableOrderService"
+import { resolveCatalogImage } from "../lib/contentService"
 import "../styles/TableMenu.css"
 
 type CartItem = {
@@ -28,6 +29,9 @@ type StoredOrderDraft = {
   customerName: string
   customerPhone: string
   paymentMethod: MenuPaymentMethod
+  invoiceRequired: boolean
+  invoiceDocument: string
+  invoiceName: string
 }
 
 const formatMoney = (value: number) => `Bs ${value.toFixed(2)}`
@@ -57,6 +61,9 @@ const readStoredOrderDraft = (tableCode: string): StoredOrderDraft => {
       customerName: parsed.customerName || "",
       customerPhone: parsed.customerPhone || "",
       paymentMethod: parsed.paymentMethod === "qr" ? "qr" : "cash",
+      invoiceRequired: Boolean(parsed.invoiceRequired),
+      invoiceDocument: parsed.invoiceDocument || "",
+      invoiceName: parsed.invoiceName || "",
     }
   } catch {
     return {
@@ -64,6 +71,9 @@ const readStoredOrderDraft = (tableCode: string): StoredOrderDraft => {
       customerName: "",
       customerPhone: "",
       paymentMethod: "cash",
+      invoiceRequired: false,
+      invoiceDocument: "",
+      invoiceName: "",
     }
   }
 }
@@ -85,6 +95,9 @@ export default function TableMenu() {
   const [customerName, setCustomerName] = useState(storedDraft.customerName)
   const [customerPhone, setCustomerPhone] = useState(storedDraft.customerPhone)
   const [paymentMethod, setPaymentMethod] = useState<MenuPaymentMethod>(storedDraft.paymentMethod)
+  const [invoiceRequired, setInvoiceRequired] = useState(storedDraft.invoiceRequired)
+  const [invoiceDocument, setInvoiceDocument] = useState(storedDraft.invoiceDocument)
+  const [invoiceName, setInvoiceName] = useState(storedDraft.invoiceName)
   const [receipt, setReceipt] = useState<File | null>(null)
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
@@ -122,13 +135,24 @@ export default function TableMenu() {
     setCustomerName(nextDraft.customerName)
     setCustomerPhone(nextDraft.customerPhone)
     setPaymentMethod(nextDraft.paymentMethod)
+    setInvoiceRequired(nextDraft.invoiceRequired)
+    setInvoiceDocument(nextDraft.invoiceDocument)
+    setInvoiceName(nextDraft.invoiceName)
     setReceipt(null)
     setMessage("")
     setErrorMessage("")
   }, [tableCode])
 
   useEffect(() => {
-    if (cart.length === 0 && !customerName && !customerPhone && paymentMethod === "cash") {
+    if (
+      cart.length === 0 &&
+      !customerName &&
+      !customerPhone &&
+      paymentMethod === "cash" &&
+      !invoiceRequired &&
+      !invoiceDocument &&
+      !invoiceName
+    ) {
       localStorage.removeItem(getTableDraftKey(tableCode))
       return
     }
@@ -140,9 +164,12 @@ export default function TableMenu() {
         customerName,
         customerPhone,
         paymentMethod,
+        invoiceRequired,
+        invoiceDocument,
+        invoiceName,
       } satisfies StoredOrderDraft),
     )
-  }, [cart, customerName, customerPhone, paymentMethod, tableCode])
+  }, [cart, customerName, customerPhone, paymentMethod, invoiceRequired, invoiceDocument, invoiceName, tableCode])
 
   useEffect(() => {
     if (!selectedProduct) return
@@ -284,6 +311,10 @@ export default function TableMenu() {
       setErrorMessage("Sube el comprobante de pago.")
       return
     }
+    if (invoiceRequired && (!invoiceDocument.trim() || !invoiceName.trim())) {
+      setErrorMessage("Completa NIT/CI y nombre para la factura.")
+      return
+    }
 
     setSubmitting(true)
     setErrorMessage("")
@@ -309,6 +340,9 @@ export default function TableMenu() {
         customerPhone,
         paymentMethod,
         paymentReceiptPath: receiptPath,
+        invoiceRequired,
+        invoiceDocument,
+        invoiceName,
         items: cart.map((item) => ({
           productId: item.product.id,
           variantId: item.variantId,
@@ -327,6 +361,9 @@ export default function TableMenu() {
       setCustomerName("")
       setCustomerPhone("")
       setPaymentMethod("cash")
+      setInvoiceRequired(false)
+      setInvoiceDocument("")
+      setInvoiceName("")
       setReceipt(null)
       setMobileCartOpen(false)
       localStorage.removeItem(getTableDraftKey(tableCode))
@@ -388,7 +425,7 @@ export default function TableMenu() {
               const price = product.variants[0]?.price ?? product.basePrice
               return (
                 <article key={product.id} className="table-product-card">
-                  {product.imagePath ? <img src={product.imagePath} alt={product.name} /> : <div className="table-product-fallback" />}
+                  <img src={resolveCatalogImage(product.imagePath)} alt={product.name} />
                   <div>
                     <span>{product.productType === "combo" ? "Combo" : "Producto"}</span>
                     <strong>{product.name}</strong>
@@ -440,6 +477,28 @@ export default function TableMenu() {
 
           <label>Nombre completo<input value={customerName} onChange={(event) => setCustomerName(event.target.value)} /></label>
           <label>WhatsApp<input value={customerPhone} onChange={(event) => setCustomerPhone(event.target.value)} inputMode="tel" /></label>
+
+          <label className="table-invoice-toggle">
+            <span>¿Requiere factura?</span>
+            <input
+              type="checkbox"
+              checked={invoiceRequired}
+              onChange={(event) => {
+                const checked = event.target.checked
+                setInvoiceRequired(checked)
+                if (!checked) {
+                  setInvoiceDocument("")
+                  setInvoiceName("")
+                }
+              }}
+            />
+          </label>
+          {invoiceRequired ? (
+            <div className="table-invoice-fields">
+              <label>NIT / CI<input value={invoiceDocument} onChange={(event) => setInvoiceDocument(event.target.value)} /></label>
+              <label>Nombre o razon social<input value={invoiceName} onChange={(event) => setInvoiceName(event.target.value)} /></label>
+            </div>
+          ) : null}
 
           <div className="table-payment-toggle">
             <button type="button" className={paymentMethod === "cash" ? "is-active" : ""} onClick={() => setPaymentMethod("cash")}>

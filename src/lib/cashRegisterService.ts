@@ -8,10 +8,13 @@ export type CashMovementStatus = "active" | "cancelled"
 export interface CashSession {
   id: string
   openedByEmail: string | null
+  openingOperatorName: string | null
   openedAt: string
   closedByEmail: string | null
+  closingOperatorName: string | null
   closedAt: string | null
   openingCashAmount: number
+  openingBalanceReason: string | null
   closingCashCounted: number | null
   expectedCashAmount: number | null
   differenceAmount: number | null
@@ -99,9 +102,43 @@ export interface ClosureReport {
   expectedCashAmount: number
   countedCashAmount: number
   differenceAmount: number
+  openingOperatorName: string | null
+  closingOperatorName: string | null
   closedByEmail: string | null
   closedAt: string
   reportSnapshot: Record<string, unknown>
+}
+
+export interface CashGameTemplate {
+  id: string
+  name: string
+  slug: string
+  defaultPrice: number
+  defaultPartySize: number
+  sortOrder: number
+  isActive: boolean
+}
+
+export interface WalkInGame {
+  id: string
+  cashSessionId: string
+  gameTemplateId: string | null
+  gameName: string
+  customerName: string | null
+  customerPhone: string | null
+  partySize: number
+  price: number
+  paymentMethod: CashPaymentMethod | null
+  paymentStatus: "pending" | "paid" | "cancelled"
+  receiptImagePath: string | null
+  receiptDeletedAt: string | null
+  status: "pending_payment" | "paid" | "in_game" | "completed" | "cancelled"
+  notes: string | null
+  paidAt: string | null
+  startedAt: string | null
+  finishedAt: string | null
+  createdByEmail: string | null
+  createdAt: string
 }
 
 export interface PosSaleInputItem {
@@ -115,10 +152,13 @@ export interface PosSaleInputItem {
 type CashSessionRow = {
   id: string
   opened_by_email: string | null
+  opening_operator_name: string | null
   opened_at: string
   closed_by_email: string | null
+  closing_operator_name: string | null
   closed_at: string | null
   opening_cash_amount: number
+  opening_balance_reason: string | null
   closing_cash_counted: number | null
   expected_cash_amount: number | null
   difference_amount: number | null
@@ -182,9 +222,43 @@ type ClosureReportRow = {
   expected_cash_amount: number
   counted_cash_amount: number
   difference_amount: number
+  opening_operator_name: string | null
+  closing_operator_name: string | null
   closed_by_email: string | null
   closed_at: string
   report_snapshot: Record<string, unknown>
+}
+
+type CashGameTemplateRow = {
+  id: string
+  name: string
+  slug: string
+  default_price: number
+  default_party_size: number
+  sort_order: number
+  is_active: boolean
+}
+
+type WalkInGameRow = {
+  id: string
+  cash_session_id: string
+  game_template_id: string | null
+  game_name: string
+  customer_name: string | null
+  customer_phone: string | null
+  party_size: number
+  price: number
+  payment_method: CashPaymentMethod | null
+  payment_status: "pending" | "paid" | "cancelled"
+  receipt_image_path: string | null
+  receipt_deleted_at: string | null
+  status: "pending_payment" | "paid" | "in_game" | "completed" | "cancelled"
+  notes: string | null
+  paid_at: string | null
+  started_at: string | null
+  finished_at: string | null
+  created_by_email: string | null
+  created_at: string
 }
 
 const newId = () =>
@@ -202,10 +276,13 @@ const toNumber = (value: unknown) => Number(value || 0)
 const mapCashSession = (row: CashSessionRow): CashSession => ({
   id: row.id,
   openedByEmail: row.opened_by_email,
+  openingOperatorName: row.opening_operator_name,
   openedAt: row.opened_at,
   closedByEmail: row.closed_by_email,
+  closingOperatorName: row.closing_operator_name,
   closedAt: row.closed_at,
   openingCashAmount: Number(row.opening_cash_amount),
+  openingBalanceReason: row.opening_balance_reason,
   closingCashCounted: row.closing_cash_counted === null ? null : Number(row.closing_cash_counted),
   expectedCashAmount: row.expected_cash_amount === null ? null : Number(row.expected_cash_amount),
   differenceAmount: row.difference_amount === null ? null : Number(row.difference_amount),
@@ -265,16 +342,157 @@ export async function cleanupOldCashReceipts() {
   if (error) console.warn("No se pudieron limpiar comprobantes vencidos:", error.message)
 }
 
+export async function fetchCashGameTemplates() {
+  const { data, error } = await supabase
+    .from("cash_game_templates")
+    .select("id, name, slug, default_price, default_party_size, sort_order, is_active")
+    .order("sort_order", { ascending: true })
+    .order("name", { ascending: true })
+
+  if (error) throw new Error(error.message)
+
+  return ((data || []) as CashGameTemplateRow[]).map((row) => ({
+    id: row.id,
+    name: row.name,
+    slug: row.slug,
+    defaultPrice: Number(row.default_price),
+    defaultPartySize: row.default_party_size,
+    sortOrder: row.sort_order,
+    isActive: row.is_active,
+  }))
+}
+
+export async function createCashGameTemplate(input: {
+  name: string
+  defaultPrice?: number
+  defaultPartySize?: number
+  sortOrder?: number
+}) {
+  const { error } = await supabase.rpc("create_cash_game_template", {
+    p_name: input.name,
+    p_default_price: input.defaultPrice ?? 0,
+    p_default_party_size: input.defaultPartySize ?? 1,
+    p_sort_order: input.sortOrder ?? 0,
+  })
+
+  if (error) throw new Error(error.message)
+}
+
+export async function updateCashGameTemplate(id: string, patch: Partial<CashGameTemplate>) {
+  const payload: Record<string, string | number | boolean> = {}
+  if ("name" in patch && patch.name !== undefined) payload.name = patch.name
+  if ("defaultPrice" in patch && patch.defaultPrice !== undefined) payload.default_price = patch.defaultPrice
+  if ("defaultPartySize" in patch && patch.defaultPartySize !== undefined) {
+    payload.default_party_size = patch.defaultPartySize
+  }
+  if ("sortOrder" in patch && patch.sortOrder !== undefined) payload.sort_order = patch.sortOrder
+  if ("isActive" in patch && patch.isActive !== undefined) payload.is_active = patch.isActive
+
+  const { error } = await supabase.from("cash_game_templates").update(payload).eq("id", id)
+  if (error) throw new Error(error.message)
+}
+
+export async function fetchWalkInGames(cashSessionId: string) {
+  const { data, error } = await supabase
+    .from("walk_in_games")
+    .select("id, cash_session_id, game_template_id, game_name, customer_name, customer_phone, party_size, price, payment_method, payment_status, receipt_image_path, receipt_deleted_at, status, notes, paid_at, started_at, finished_at, created_by_email, created_at")
+    .eq("cash_session_id", cashSessionId)
+    .order("created_at", { ascending: false })
+
+  if (error) throw new Error(error.message)
+
+  return ((data || []) as WalkInGameRow[]).map((row) => ({
+    id: row.id,
+    cashSessionId: row.cash_session_id,
+    gameTemplateId: row.game_template_id,
+    gameName: row.game_name,
+    customerName: row.customer_name,
+    customerPhone: row.customer_phone,
+    partySize: row.party_size,
+    price: Number(row.price),
+    paymentMethod: row.payment_method,
+    paymentStatus: row.payment_status,
+    receiptImagePath: row.receipt_image_path ? resolveMediaPath(row.receipt_image_path, "receipts") : null,
+    receiptDeletedAt: row.receipt_deleted_at,
+    status: row.status,
+    notes: row.notes,
+    paidAt: row.paid_at,
+    startedAt: row.started_at,
+    finishedAt: row.finished_at,
+    createdByEmail: row.created_by_email,
+    createdAt: row.created_at,
+  }))
+}
+
+export async function createWalkInGame(input: {
+  gameTemplateId?: string | null
+  gameName: string
+  customerName?: string
+  customerPhone?: string
+  partySize: number
+  price: number
+  notes?: string
+}) {
+  const { error } = await supabase.rpc("create_walk_in_game", {
+    p_game_template_id: input.gameTemplateId || null,
+    p_game_name: input.gameName,
+    p_customer_name: input.customerName || null,
+    p_customer_phone: input.customerPhone || null,
+    p_party_size: input.partySize,
+    p_price: input.price,
+    p_notes: input.notes || null,
+  })
+
+  if (error) throw new Error(error.message)
+}
+
+export async function registerWalkInGamePayment(input: {
+  gameId: string
+  paymentMethod: CashPaymentMethod
+  receiptImagePath?: string | null
+  customerName?: string
+  customerPhone?: string
+  notes?: string
+}) {
+  const { error } = await supabase.rpc("register_walk_in_game_payment", {
+    p_game_id: input.gameId,
+    p_payment_method: input.paymentMethod,
+    p_receipt_image_path: input.receiptImagePath || null,
+    p_customer_name: input.customerName || null,
+    p_customer_phone: input.customerPhone || null,
+    p_notes: input.notes || null,
+  })
+
+  if (error) throw new Error(error.message)
+}
+
+export async function startWalkInGame(gameId: string) {
+  const { error } = await supabase.rpc("start_walk_in_game", { p_game_id: gameId })
+  if (error) throw new Error(error.message)
+}
+
+export async function finishWalkInGame(gameId: string) {
+  const { error } = await supabase.rpc("finish_walk_in_game", { p_game_id: gameId })
+  if (error) throw new Error(error.message)
+}
+
 export async function fetchOpenCashSession() {
   const { data, error } = await supabase.rpc("get_open_cash_session")
   if (error) throw new Error(error.message)
   return data ? mapCashSession(data as CashSessionRow) : null
 }
 
-export async function openCashSession(openingCashAmount: number, notes?: string) {
+export async function openCashSession(
+  openingCashAmount: number,
+  notes?: string,
+  openingOperatorName?: string,
+  openingBalanceReason?: string,
+) {
   const { error } = await supabase.rpc("open_cash_session", {
     p_opening_cash_amount: openingCashAmount,
     p_notes: notes || null,
+    p_opening_operator_name: openingOperatorName || null,
+    p_opening_balance_reason: openingBalanceReason || null,
   })
   if (error) throw new Error(error.message)
 }
@@ -403,6 +621,9 @@ export async function createPosSale(input: {
   discountAmount: number
   paymentMethod: CashPaymentMethod
   receiptImagePath?: string | null
+  invoiceRequired?: boolean
+  invoiceDocument?: string | null
+  invoiceName?: string | null
   notes?: string
   items: PosSaleInputItem[]
 }) {
@@ -412,6 +633,9 @@ export async function createPosSale(input: {
     p_discount_amount: input.discountAmount,
     p_payment_method: input.paymentMethod,
     p_receipt_image_path: input.receiptImagePath || null,
+    p_invoice_required: input.invoiceRequired ?? false,
+    p_invoice_document: input.invoiceDocument || null,
+    p_invoice_name: input.invoiceName || null,
     p_notes: input.notes || null,
     p_items: input.items.map((item) => ({
       product_id: item.productId,
@@ -467,10 +691,15 @@ export async function registerTableOrderPayment(input: {
   if (error) throw new Error(error.message)
 }
 
-export async function closeCashSession(countedCashAmount: number, closingNotes?: string) {
+export async function closeCashSession(
+  countedCashAmount: number,
+  closingNotes?: string,
+  closingOperatorName?: string,
+) {
   const { error } = await supabase.rpc("close_cash_session", {
     p_counted_cash_amount: countedCashAmount,
     p_closing_notes: closingNotes || null,
+    p_closing_operator_name: closingOperatorName || null,
   })
   if (error) throw new Error(error.message)
 }
@@ -505,7 +734,7 @@ export async function markBookingNoShow(bookingId: string, reason?: string) {
 export async function fetchCashSessions(limit = 30) {
   const { data, error } = await supabase
     .from("cash_sessions")
-    .select("id, opened_by_email, opened_at, closed_by_email, closed_at, opening_cash_amount, closing_cash_counted, expected_cash_amount, difference_amount, status, notes, closing_notes, session_date")
+    .select("id, opened_by_email, opening_operator_name, opened_at, closed_by_email, closing_operator_name, closed_at, opening_cash_amount, opening_balance_reason, closing_cash_counted, expected_cash_amount, difference_amount, status, notes, closing_notes, session_date")
     .order("session_date", { ascending: false })
     .limit(limit)
 
@@ -516,7 +745,7 @@ export async function fetchCashSessions(limit = 30) {
 export async function fetchClosureReports(limit = 30) {
   const { data, error } = await supabase
     .from("cash_closure_reports")
-    .select("id, cash_session_id, report_date, opening_cash_amount, total_cash_income, total_qr_income, total_card_income, total_transfer_income, total_expenses, total_reservation_payments, total_table_order_payments, total_pos_sales, total_manual_income, expected_cash_amount, counted_cash_amount, difference_amount, closed_by_email, closed_at, report_snapshot")
+    .select("id, cash_session_id, report_date, opening_cash_amount, total_cash_income, total_qr_income, total_card_income, total_transfer_income, total_expenses, total_reservation_payments, total_table_order_payments, total_pos_sales, total_manual_income, expected_cash_amount, counted_cash_amount, difference_amount, opening_operator_name, closing_operator_name, closed_by_email, closed_at, report_snapshot")
     .order("closed_at", { ascending: false })
     .limit(limit)
 
@@ -538,6 +767,8 @@ export async function fetchClosureReports(limit = 30) {
     expectedCashAmount: Number(row.expected_cash_amount),
     countedCashAmount: Number(row.counted_cash_amount),
     differenceAmount: Number(row.difference_amount),
+    openingOperatorName: row.opening_operator_name,
+    closingOperatorName: row.closing_operator_name,
     closedByEmail: row.closed_by_email,
     closedAt: row.closed_at,
     reportSnapshot: row.report_snapshot || {},
