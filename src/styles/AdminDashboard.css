@@ -246,6 +246,18 @@
   color: #8b2730;
 }
 
+.admin-notification-card--warning,
+.admin-inventory-alert-item--warning {
+  background: rgba(232, 184, 74, 0.12);
+  border-color: rgba(232, 184, 74, 0.24);
+}
+
+.admin-notification-card--danger,
+.admin-inventory-alert-item--danger {
+  background: rgba(200, 68, 69, 0.1);
+  border-color: rgba(200, 68, 69, 0.22);
+}
+
 .admin-qr-manager {
   display: grid;
   grid-template-columns: minmax(240px, 0.85fr) minmax(280px, 1.15fr);
@@ -413,6 +425,22 @@
 .admin-product-grid--list .admin-product-card {
   grid-template-columns: 120px minmax(0, 1fr) auto;
   align-items: center;
+}
+
+.admin-product-card__actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.admin-product-card__actions button {
+  min-height: 42px;
+  padding: 0.58rem 0.85rem;
+  border-radius: 14px;
+}
+
+.admin-product-grid--list .admin-product-card__actions {
+  min-width: 220px;
 }
 
 .admin-product-image {
@@ -837,6 +865,10 @@
   box-shadow: 0 8px 18px rgba(48, 68, 34, 0.1);
 }
 
+.admin-section-heading--subtle {
+  margin: 0.85rem 0 0.55rem;
+}
+
 .admin-stat-grid,
 .admin-split,
 .admin-reservation-grid,
@@ -869,6 +901,80 @@
   margin-top: 0.5rem;
   font-family: "Sora", sans-serif;
   font-size: 1.85rem;
+}
+
+.admin-inventory-overview-grid,
+.admin-inventory-alert-columns {
+  display: grid;
+  gap: 1rem;
+}
+
+.admin-inventory-overview-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.admin-inventory-overview-card,
+.admin-inventory-alert-block {
+  padding: 0.95rem;
+  border: 1px solid rgba(16, 33, 37, 0.08);
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(247, 250, 235, 0.96)),
+    #ffffff;
+}
+
+.admin-inventory-overview-card {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.admin-inventory-overview-card strong {
+  color: #102125;
+  font-family: "Sora", sans-serif;
+  font-size: 2rem;
+}
+
+.admin-inventory-overview-card p,
+.admin-inventory-alert-item p,
+.admin-inventory-alert-modal p {
+  margin: 0;
+  color: #58676b;
+  line-height: 1.45;
+}
+
+.admin-inventory-alert-columns {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.admin-inventory-alert-block {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.admin-inventory-alert-list {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.admin-inventory-alert-item {
+  display: grid;
+  gap: 0.3rem;
+  padding: 0.8rem;
+  border: 1px solid rgba(16, 33, 37, 0.08);
+  border-radius: 16px;
+  background: #fffdf8;
+}
+
+.admin-inventory-alert-item strong,
+.admin-inventory-alert-modal h2 {
+  color: #102125;
+  font-family: "Sora", sans-serif;
+}
+
+.admin-inventory-alert-item span {
+  color: #274128;
+  font-size: 0.82rem;
+  font-weight: 800;
 }
 
 .admin-split {
@@ -1659,6 +1765,15 @@
   gap: 0.85rem;
 }
 
+.admin-inventory-alert-modal {
+  width: min(900px, 100%);
+}
+
+.admin-inventory-alert-modal .admin-modal-form {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: start;
+}
+
 .admin-modal-actions {
   display: flex;
   flex-wrap: wrap;
@@ -1817,6 +1932,9 @@
   .admin-table-modal-preview,
   .admin-super-grid,
   .admin-danger-grid,
+  .admin-inventory-overview-grid,
+  .admin-inventory-alert-columns,
+  .admin-inventory-alert-modal .admin-modal-form,
   .admin-super-lists {
     grid-template-columns: 1fr;
   }
@@ -1830,6 +1948,14 @@
 
   .admin-reservation-grid--list .admin-reservation-card {
     grid-template-columns: 1fr;
+  }
+
+  .admin-product-card__actions {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-product-grid--list .admin-product-card__actions {
+    min-width: 0;
   }
 
   .admin-section-heading {

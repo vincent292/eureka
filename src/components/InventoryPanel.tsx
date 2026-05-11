@@ -15,6 +15,8 @@ import {
   FaSearch,
   FaTags,
   FaTimes,
+  FaToggleOff,
+  FaToggleOn,
   FaTrash,
   FaTruck,
   FaWarehouse,
@@ -390,7 +392,7 @@ export default function InventoryPanel({ isSuperAdmin }: InventoryPanelProps) {
                   <span>{money(item.unitCost)}</span>
                   <span>{item.locationId ? locationById.get(item.locationId)?.name : "Sin ubicación"}</span>
                 </div>
-                <div className="admin-inline-actions">
+                <div className="admin-inline-actions inventory-item-actions">
                   <button type="button" className="btn-edit" onClick={() => setModal({ type: "detail", item })}>Detalle</button>
                   <button type="button" className="btn-edit" onClick={() => setModal({ type: "item", item })}><FaEdit />Editar</button>
                   <button type="button" className="btn-approve" onClick={() => setModal({ type: "movement", item, movementType: "purchase" })}>Entrada</button>
@@ -410,7 +412,7 @@ export default function InventoryPanel({ isSuperAdmin }: InventoryPanelProps) {
       ) : null}
 
       {activeTab === "categories" ? (
-        <InventoryCategoriesView
+        <InventoryCategoriesViewModern
           parents={parentCategories}
           children={childCategories}
           setModal={setModal}
@@ -653,16 +655,29 @@ function InventoryCategoriesView({
       <div className="inventory-category-grid">
         {parents.map((category) => {
           const subcategories = children.filter((child) => child.parentId === category.id)
+          const directItems = items.filter((item) => item.categoryId === category.id).length
+          const nestedItems = subcategories.reduce((sum, child) => sum + items.filter((item) => item.categoryId === child.id).length, 0)
           return (
             <article key={category.id} className="inventory-category-card">
-              <div>
-                <span style={{ background: category.color || "#84ba4a" }} />
-                <strong>{category.name}</strong>
+              <div className="inventory-category-card__top">
+                <div className="inventory-category-card__identity">
+                  <span style={{ background: category.color || "#84ba4a" }} />
+                  <div>
+                    <strong>{category.name}</strong>
+                    <small>{category.description || "Sin descripcion"}</small>
+                  </div>
+                </div>
+                <div className="inventory-category-card__chips">
+                  <span>{subcategories.length} subcategorias</span>
+                  <span>{directItems + nestedItems} items</span>
+                </div>
               </div>
-              <p>{category.description || "Sin descripción"}</p>
               <div className="inventory-subcategory-panel">
                 <div className="inventory-subcategory-panel__head">
-                  <span>Subcategorías</span>
+                  <div>
+                    <span>Subcategorias</span>
+                    <p>Acciones compactas para mantener la vista ligera.</p>
+                  </div>
                   <strong>{subcategories.length}</strong>
                 </div>
                 <div className="inventory-subcategory-list">
@@ -670,20 +685,41 @@ function InventoryCategoriesView({
                     const relatedCount = items.filter((item) => item.categoryId === child.id).length
                     return (
                       <div key={child.id} className={!child.isActive ? "inventory-subcategory-row is-muted" : "inventory-subcategory-row"}>
-                        <div>
-                          <strong>{child.name}</strong>
+                        <div className="inventory-subcategory-copy">
+                          <div className="inventory-subcategory-copy__title">
+                            <strong>{child.name}</strong>
+                            {!child.isActive ? <em>Inactiva</em> : null}
+                          </div>
                           <span>{relatedCount} ítems</span>
                         </div>
                         <div className="inventory-subcategory-actions">
-                          <button type="button" className="btn-edit" onClick={() => setModal({ type: "category", category: child })}><FaEdit />Editar</button>
                           <button
                             type="button"
-                            className={child.isActive ? "btn-reject" : "btn-approve"}
+                            className="btn-edit inventory-icon-button"
+                            aria-label={`Editar subcategoria ${child.name}`}
+                            title={`Editar ${child.name}`}
+                            onClick={() => setModal({ type: "category", category: child })}
+                          >
+                            <FaEdit />
+                          </button>
+                          <button
+                            type="button"
+                            className={`${child.isActive ? "btn-reject" : "btn-approve"} inventory-icon-button`}
+                            aria-label={`${child.isActive ? "Desactivar" : "Activar"} subcategoria ${child.name}`}
+                            title={`${child.isActive ? "Desactivar" : "Activar"} ${child.name}`}
                             onClick={() => toggleCategoryStatus({ ...child, isActive: !child.isActive })}
                           >
-                            {child.isActive ? "Desactivar" : "Activar"}
+                            {child.isActive ? <FaToggleOff /> : <FaToggleOn />}
                           </button>
-                          <button type="button" className="btn-danger" onClick={() => requestDeleteCategory(child)}><FaTrash />Eliminar</button>
+                          <button
+                            type="button"
+                            className="btn-danger inventory-icon-button"
+                            aria-label={`Eliminar subcategoria ${child.name}`}
+                            title={`Eliminar ${child.name}`}
+                            onClick={() => requestDeleteCategory(child)}
+                          >
+                            <FaTrash />
+                          </button>
                         </div>
                       </div>
                     )
@@ -691,7 +727,7 @@ function InventoryCategoriesView({
                   {subcategories.length === 0 ? <p className="inventory-empty-note">Sin subcategorías disponibles.</p> : null}
                 </div>
               </div>
-              <div className="admin-inline-actions">
+              <div className="admin-inline-actions inventory-category-actions">
                 <button type="button" className="btn-edit" onClick={() => setModal({ type: "category", category })}>Editar categoría</button>
                 <button type="button" className="btn-approve" onClick={() => setModal({ type: "category", parentId: category.id })}>Subcategoría</button>
                 <button type="button" className="btn-reject" onClick={() => requestDeleteCategory(category)}>Eliminar</button>
@@ -700,6 +736,219 @@ function InventoryCategoriesView({
           )
         })}
       </div>
+    </section>
+  )
+}
+
+void InventoryCategoriesView
+
+function InventoryCategoriesViewModern({
+  parents,
+  children,
+  items,
+  setModal,
+  toggleCategoryStatus,
+  requestDeleteCategory,
+}: {
+  parents: InventoryCategory[]
+  children: InventoryCategory[]
+  items: InventoryItem[]
+  setModal: (modal: InventoryModal) => void
+  toggleCategoryStatus: (category: InventoryCategory) => void
+  requestDeleteCategory: (category: InventoryCategory) => void
+}) {
+  const [selectedParentId, setSelectedParentId] = useState<string>(parents[0]?.id ?? "")
+
+  useEffect(() => {
+    if (parents.length === 0) {
+      if (selectedParentId !== "") {
+        setSelectedParentId("")
+      }
+      return
+    }
+
+    if (!parents.some((category) => category.id === selectedParentId)) {
+      setSelectedParentId(parents[0]?.id ?? "")
+    }
+  }, [parents, selectedParentId])
+
+  const selectedParent = parents.find((category) => category.id === selectedParentId) ?? null
+  const selectedSubcategories = selectedParent
+    ? children.filter((child) => child.parentId === selectedParent.id)
+    : []
+  const getCategoryItemCount = (categoryId: string) => items.filter((item) => item.categoryId === categoryId).length
+  const getParentItemCount = (parentId: string) => {
+    const subcategories = children.filter((child) => child.parentId === parentId)
+    return getCategoryItemCount(parentId) + subcategories.reduce((sum, child) => sum + getCategoryItemCount(child.id), 0)
+  }
+
+  return (
+    <section className="admin-panel-card">
+      <div className="admin-section-heading">
+        <div>
+          <span className="admin-kicker">Secciones</span>
+          <h2>Categorias y subcategorias</h2>
+        </div>
+        <div className="admin-inline-actions inventory-category-toolbar">
+          <button type="button" className="btn-approve" onClick={() => setModal({ type: "category" })}>
+            <FaPlus />
+            Categoria
+          </button>
+          {selectedParent ? (
+            <button type="button" className="btn-edit" onClick={() => setModal({ type: "category", parentId: selectedParent.id })}>
+              <FaPlus />
+              Nueva subcategoria
+            </button>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="inventory-category-selector-grid">
+        {parents.map((category) => {
+          const subcategories = children.filter((child) => child.parentId === category.id)
+          const totalItems = getParentItemCount(category.id)
+          return (
+            <article
+              key={category.id}
+              className={`inventory-category-selector ${selectedParentId === category.id ? "is-active" : ""} ${!category.isActive ? "is-muted" : ""}`}
+            >
+              <button
+                type="button"
+                className="inventory-category-selector__main"
+                onClick={() => setSelectedParentId(category.id)}
+              >
+                <div className="inventory-category-selector__identity">
+                  <span
+                    className="inventory-category-selector__swatch"
+                    style={{ background: category.color || "#84ba4a" }}
+                  />
+                  <div>
+                    <strong>{category.name}</strong>
+                    <small>{category.description || "Sin descripcion"}</small>
+                  </div>
+                </div>
+                <div className="inventory-category-selector__chips">
+                  <span>{subcategories.length} subcategorias</span>
+                  <span>{totalItems} items</span>
+                </div>
+              </button>
+              <div className="inventory-category-selector__actions">
+                <button
+                  type="button"
+                  className="btn-edit inventory-icon-button"
+                  aria-label={`Editar categoria ${category.name}`}
+                  title={`Editar ${category.name}`}
+                  onClick={() => setModal({ type: "category", category })}
+                >
+                  <FaEdit />
+                </button>
+                <button
+                  type="button"
+                  className="btn-danger inventory-icon-button"
+                  aria-label={`Eliminar categoria ${category.name}`}
+                  title={`Eliminar ${category.name}`}
+                  onClick={() => requestDeleteCategory(category)}
+                >
+                  <FaTrash />
+                </button>
+              </div>
+            </article>
+          )
+        })}
+      </div>
+
+      {selectedParent ? (
+        <section className="inventory-category-detail">
+          <div className="inventory-category-detail__hero">
+            <div>
+              <span className="admin-kicker">Subcategorias</span>
+              <h3>{selectedParent.name}</h3>
+              <p>{selectedParent.description || "Organiza aqui las subcategorias de esta seccion."}</p>
+            </div>
+            <div className="inventory-category-detail__stats">
+              <span>{selectedSubcategories.length} subcategorias</span>
+              <span>{getParentItemCount(selectedParent.id)} items ligados</span>
+            </div>
+          </div>
+
+          <div className="admin-inline-actions inventory-category-detail__actions">
+            <button type="button" className="btn-edit" onClick={() => setModal({ type: "category", category: selectedParent })}>
+              <FaEdit />
+              Editar categoria
+            </button>
+            <button type="button" className="btn-approve" onClick={() => setModal({ type: "category", parentId: selectedParent.id })}>
+              <FaPlus />
+              Nueva subcategoria
+            </button>
+            <button type="button" className="btn-reject" onClick={() => requestDeleteCategory(selectedParent)}>
+              <FaTrash />
+              Eliminar
+            </button>
+          </div>
+
+          <div className="inventory-subcategory-card-grid">
+            {selectedSubcategories.map((child) => {
+              const relatedCount = getCategoryItemCount(child.id)
+              return (
+                <article
+                  key={child.id}
+                  className={`inventory-subcategory-card ${!child.isActive ? "is-muted" : ""}`}
+                >
+                  <div className="inventory-subcategory-card__top">
+                    <div className="inventory-subcategory-copy">
+                      <div className="inventory-subcategory-copy__title">
+                        <strong>{child.name}</strong>
+                        {!child.isActive ? <em>Inactiva</em> : null}
+                      </div>
+                      <span>{relatedCount} items</span>
+                    </div>
+                    <div className="inventory-subcategory-actions">
+                      <button
+                        type="button"
+                        className="btn-edit inventory-icon-button"
+                        aria-label={`Editar subcategoria ${child.name}`}
+                        title={`Editar ${child.name}`}
+                        onClick={() => setModal({ type: "category", category: child })}
+                      >
+                        <FaEdit />
+                      </button>
+                      <button
+                        type="button"
+                        className={`${child.isActive ? "btn-reject" : "btn-approve"} inventory-icon-button`}
+                        aria-label={`${child.isActive ? "Desactivar" : "Activar"} subcategoria ${child.name}`}
+                        title={`${child.isActive ? "Desactivar" : "Activar"} ${child.name}`}
+                        onClick={() => toggleCategoryStatus({ ...child, isActive: !child.isActive })}
+                      >
+                        {child.isActive ? <FaToggleOff /> : <FaToggleOn />}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-danger inventory-icon-button"
+                        aria-label={`Eliminar subcategoria ${child.name}`}
+                        title={`Eliminar ${child.name}`}
+                        onClick={() => requestDeleteCategory(child)}
+                      >
+                        <FaTrash />
+                      </button>
+                    </div>
+                  </div>
+                  <p>{child.description || "Sin descripcion"}</p>
+                </article>
+              )
+            })}
+            {selectedSubcategories.length === 0 ? (
+              <article className="inventory-subcategory-empty">
+                <strong>Aun no hay subcategorias</strong>
+                <p>Crea la primera subcategoria de esta seccion para que el inventario no se vea aglomerado.</p>
+                <button type="button" className="btn-approve" onClick={() => setModal({ type: "category", parentId: selectedParent.id })}>
+                  <FaPlus />
+                  Nueva subcategoria
+                </button>
+              </article>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
     </section>
   )
 }

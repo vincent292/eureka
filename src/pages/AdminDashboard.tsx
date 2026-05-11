@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import {
   FaBars,
   FaBell,
@@ -112,6 +112,12 @@ import {
 } from "../lib/adminDashboardService"
 import { getCurrentAdminProfile, type CurrentAdminProfile } from "../lib/adminAuth"
 import { resolveCatalogImage } from "../lib/contentService"
+import {
+  buildInventoryAlerts,
+  fetchInventoryDashboard,
+  type InventoryAlert,
+} from "../lib/inventoryService"
+import { enableWebPushNotifications, sendTestWebPushNotification } from "../lib/pushNotifications"
 import { supabase } from "../lib/supabaseClient"
 import "../styles/AdminDashboard.css"
 
@@ -400,6 +406,7 @@ export default function AdminDashboard() {
   const [restaurantTables, setRestaurantTables] = useState<AdminRestaurantTable[]>([])
   const [liveOrders, setLiveOrders] = useState<AdminLiveOrder[]>([])
   const [messageTemplates, setMessageTemplates] = useState<AdminMessageTemplate[]>([])
+  const [inventoryAlerts, setInventoryAlerts] = useState<InventoryAlert[]>([])
   const [adminProfile, setAdminProfile] = useState<CurrentAdminProfile | null>(null)
   const [superAdminOverview, setSuperAdminOverview] = useState<SuperAdminOverview | null>(null)
   const [loading, setLoading] = useState(true)
@@ -437,6 +444,7 @@ export default function AdminDashboard() {
   const [browserNotificationsEnabled, setBrowserNotificationsEnabled] = useState(
     typeof Notification !== "undefined" && Notification.permission === "granted",
   )
+  const [inventoryAlertsModalOpen, setInventoryAlertsModalOpen] = useState(false)
   const [draggedHeroId, setDraggedHeroId] = useState<string | null>(null)
   const [draggedNoveltyId, setDraggedNoveltyId] = useState<string | null>(null)
   const [promoMessage, setPromoMessage] = useState(
@@ -448,6 +456,8 @@ export default function AdminDashboard() {
   const [saveMessage, setSaveMessage] = useState("")
   const [bookingNotes, setBookingNotes] = useState<Record<string, string>>({})
   const seenNotificationIdsRef = useRef<string[]>([])
+  const seenInventoryAlertIdsRef = useRef<string[]>([])
+  const inventoryWelcomeShownRef = useRef(false)
   const dirtyBookingNoteIdsRef = useRef<Set<string>>(new Set())
 
   const fetchContacts = async () => {
@@ -485,6 +495,7 @@ export default function AdminDashboard() {
         nextPaymentQrs,
         nextPaymentQrHistory,
         nextPreparedInventoryItems,
+        nextInventoryDashboard,
         nextProductCategories,
         nextProducts,
         nextRestaurantTables,
@@ -503,6 +514,7 @@ export default function AdminDashboard() {
         fetchAdminPaymentQrs(),
         fetchAdminPaymentQrHistory(),
         fetchPreparedInventoryItemOptions(),
+        fetchInventoryDashboard(),
         fetchAdminProductCategories(),
         fetchAdminProducts(),
         fetchAdminRestaurantTables(),
@@ -522,6 +534,10 @@ export default function AdminDashboard() {
       setPaymentQrs(nextPaymentQrs)
       setPaymentQrHistory(nextPaymentQrHistory)
       setPreparedInventoryItems(nextPreparedInventoryItems)
+      const nextInventoryAlerts = buildInventoryAlerts(nextInventoryDashboard).filter(
+        (alert) => alert.tone === "warning" || alert.tone === "danger",
+      )
+      setInventoryAlerts(nextInventoryAlerts)
       setProductCategories(nextProductCategories)
       setProducts(nextProducts)
       setRestaurantTables(nextRestaurantTables)
@@ -559,6 +575,31 @@ export default function AdminDashboard() {
       }
 
       seenNotificationIdsRef.current = unseenIds
+
+      const nextInventoryAlertIds = nextInventoryAlerts.map((alert) => alert.id)
+      const newestInventoryAlert = nextInventoryAlerts.find(
+        (alert) => !seenInventoryAlertIdsRef.current.includes(alert.id),
+      )
+
+      if (
+        seenInventoryAlertIdsRef.current.length > 0 &&
+        newestInventoryAlert
+      ) {
+        playNotificationTone()
+        if (browserNotificationsEnabled && document.hidden) {
+          new Notification("Eureka Inventario", {
+            body: `${newestInventoryAlert.title}: ${newestInventoryAlert.detail}`,
+            icon: "/image/eureka.png",
+          })
+        }
+      }
+
+      if (!inventoryWelcomeShownRef.current && nextInventoryAlerts.length > 0) {
+        setInventoryAlertsModalOpen(true)
+        inventoryWelcomeShownRef.current = true
+      }
+
+      seenInventoryAlertIdsRef.current = nextInventoryAlertIds
 
       await fetchContacts()
     } finally {
@@ -718,19 +759,39 @@ export default function AdminDashboard() {
   }
 
   const requestBrowserNotifications = async () => {
-    if (typeof Notification === "undefined") {
-      setSaveMessage("Este navegador no soporta notificaciones.")
+    if (!isSuperAdmin) {
+      setSaveMessage("Solo el super admin puede activar web push por ahora.")
       return
     }
 
-    const permission = await Notification.requestPermission()
-    const enabled = permission === "granted"
-    setBrowserNotificationsEnabled(enabled)
-    setSaveMessage(
-      enabled
-        ? "Notificaciones del navegador activadas mientras el panel este abierto."
-        : "No se activaron las notificaciones del navegador.",
-    )
+    try {
+      const result = await enableWebPushNotifications()
+      setBrowserNotificationsEnabled(result.enabled)
+      setSaveMessage(
+        result.enabled
+          ? result.sentTest
+            ? "Push real activado. Revisa la notificacion de prueba."
+            : "Push real activado en este dispositivo."
+          : "No se activaron las notificaciones push.",
+      )
+    } catch (error) {
+      setBrowserNotificationsEnabled(false)
+      setSaveMessage(error instanceof Error ? error.message : "No se pudo activar web push.")
+    }
+  }
+
+  const handleTestPushNotification = async () => {
+    if (!isSuperAdmin) {
+      setSaveMessage("Solo el super admin puede enviar pushes de prueba por ahora.")
+      return
+    }
+
+    try {
+      const result = await sendTestWebPushNotification()
+      setSaveMessage(`Push de prueba enviado. Entregados: ${result.delivered}.`)
+    } catch (error) {
+      setSaveMessage(error instanceof Error ? error.message : "No se pudo enviar el push de prueba.")
+    }
   }
 
   const handleBookingStatus = async (
@@ -1687,7 +1748,57 @@ export default function AdminDashboard() {
   const pendingLiveOrderCount = liveOrders.filter((order) =>
     ["new", "pending_review"].includes(order.orderStatus),
   ).length
-  const unseenCount = notifications.filter((notification) => notification.status !== "seen").length + pendingLiveOrderCount
+  const actionableInventoryAlerts = useMemo(
+    () =>
+      inventoryAlerts.filter((alert) =>
+        ["low_stock", "out_of_stock", "reorder", "expiring", "expired"].includes(alert.type),
+      ),
+    [inventoryAlerts],
+  )
+  const preparedAlerts = useMemo(() => {
+    const linkedItems = new Map<string, {
+      inventoryItemId: string
+      inventoryItemName: string
+      currentStock: number
+      minimumStock: number
+      unitAbbreviation: string
+      products: string[]
+    }>()
+
+    products.forEach((product) => {
+      const link = product.preparedStockLink
+      if (!link || !link.inventoryItemActive) {
+        return
+      }
+
+      if (link.currentStock > link.minimumStock && link.currentStock > 0) {
+        return
+      }
+
+      const current = linkedItems.get(link.inventoryItemId)
+      if (current) {
+        current.products.push(product.name)
+        return
+      }
+
+      linkedItems.set(link.inventoryItemId, {
+        inventoryItemId: link.inventoryItemId,
+        inventoryItemName: link.inventoryItemName,
+        currentStock: link.currentStock,
+        minimumStock: link.minimumStock,
+        unitAbbreviation: link.unitAbbreviation,
+        products: [product.name],
+      })
+    })
+
+    return Array.from(linkedItems.values()).sort((left, right) => left.currentStock - right.currentStock)
+  }, [products])
+  const expiringAlerts = actionableInventoryAlerts.filter((alert) => alert.type === "expiring" || alert.type === "expired")
+  const stockAlerts = actionableInventoryAlerts.filter((alert) => alert.type !== "expiring" && alert.type !== "expired")
+  const unseenCount =
+    notifications.filter((notification) => notification.status !== "seen").length +
+    pendingLiveOrderCount +
+    actionableInventoryAlerts.length
   const pendingBookings = bookings.filter((booking) =>
     ["pending_payment", "pendiente_verificacion"].includes(booking.status),
   )
@@ -1992,9 +2103,16 @@ export default function AdminDashboard() {
                 <span className="admin-kicker">Alertas</span>
                 <h2>Centro de notificaciones</h2>
               </div>
-              <button type="button" className="btn-edit" onClick={requestBrowserNotifications}>
-                {browserNotificationsEnabled ? "Navegador activo" : "Activar navegador"}
-              </button>
+              {isSuperAdmin ? (
+                <>
+                  <button type="button" className="btn-edit" onClick={requestBrowserNotifications}>
+                    {browserNotificationsEnabled ? "Push activo" : "Activar push"}
+                  </button>
+                  <button type="button" className="btn-approve" onClick={handleTestPushNotification}>
+                    Enviar push de prueba
+                  </button>
+                </>
+              ) : null}
             </div>
 
             <div className="admin-notification-list">
@@ -2013,7 +2131,130 @@ export default function AdminDashboard() {
                 ))
               )}
             </div>
+
+            <div className="admin-section-heading admin-section-heading--subtle">
+              <div>
+                <span className="admin-kicker">Inventario</span>
+                <h2>Stock y vencimientos</h2>
+              </div>
+            </div>
+
+            <div className="admin-notification-list">
+              {actionableInventoryAlerts.length === 0 ? (
+                <p>Sin alertas de inventario por ahora.</p>
+              ) : (
+                actionableInventoryAlerts.slice(0, 8).map((alert) => (
+                  <article
+                    key={alert.id}
+                    className={`admin-notification-card admin-notification-card--${alert.tone}`}
+                  >
+                    <strong>{alert.title}</strong>
+                    <p>{alert.detail}</p>
+                    <span>{alert.type === "expired" || alert.type === "expiring" ? "Vencimientos" : "Stock"}</span>
+                  </article>
+                ))
+              )}
+            </div>
           </section>
+        ) : null}
+
+        {inventoryAlertsModalOpen ? (
+          <div className="admin-modal" role="dialog" aria-modal="true">
+            <div className="admin-modal-card admin-inventory-alert-modal">
+              <div className="admin-modal-head">
+                <div>
+                  <span className="admin-kicker">Atencion</span>
+                  <h2>Alertas de inventario al iniciar</h2>
+                </div>
+                <button
+                  type="button"
+                  className="admin-modal-close"
+                  onClick={() => setInventoryAlertsModalOpen(false)}
+                  aria-label="Cerrar alertas de inventario"
+                >
+                  <FaTimes />
+                </button>
+              </div>
+
+              <div className="admin-modal-form">
+                <section className="admin-inventory-alert-block">
+                  <div className="admin-card-toolbar">
+                    <strong>Preparados por agotarse</strong>
+                    <span>{preparedAlerts.length}</span>
+                  </div>
+                  <div className="admin-inventory-alert-list">
+                    {preparedAlerts.length === 0 ? (
+                      <p className="admin-template-help">No hay preparados criticos por ahora.</p>
+                    ) : (
+                      preparedAlerts.slice(0, 6).map((alert) => (
+                        <article key={alert.inventoryItemId} className="admin-inventory-alert-item">
+                          <strong>{alert.inventoryItemName}</strong>
+                          <p>{alert.products.join(", ")}</p>
+                          <span>
+                            Stock {alert.currentStock} {alert.unitAbbreviation} | Min {alert.minimumStock}
+                          </span>
+                        </article>
+                      ))
+                    )}
+                  </div>
+                </section>
+
+                <section className="admin-inventory-alert-block">
+                  <div className="admin-card-toolbar">
+                    <strong>Inventario por acabarse</strong>
+                    <span>{stockAlerts.length}</span>
+                  </div>
+                  <div className="admin-inventory-alert-list">
+                    {stockAlerts.length === 0 ? (
+                      <p className="admin-template-help">No hay alertas de stock bajo en este momento.</p>
+                    ) : (
+                      stockAlerts.slice(0, 6).map((alert) => (
+                        <article key={alert.id} className={`admin-inventory-alert-item admin-inventory-alert-item--${alert.tone}`}>
+                          <strong>{alert.title}</strong>
+                          <p>{alert.detail}</p>
+                        </article>
+                      ))
+                    )}
+                  </div>
+                </section>
+
+                <section className="admin-inventory-alert-block">
+                  <div className="admin-card-toolbar">
+                    <strong>Vencimientos</strong>
+                    <span>{expiringAlerts.length}</span>
+                  </div>
+                  <div className="admin-inventory-alert-list">
+                    {expiringAlerts.length === 0 ? (
+                      <p className="admin-template-help">No hay lotes por vencer o vencidos.</p>
+                    ) : (
+                      expiringAlerts.slice(0, 6).map((alert) => (
+                        <article key={alert.id} className={`admin-inventory-alert-item admin-inventory-alert-item--${alert.tone}`}>
+                          <strong>{alert.title}</strong>
+                          <p>{alert.detail}</p>
+                        </article>
+                      ))
+                    )}
+                  </div>
+                </section>
+              </div>
+
+              <div className="admin-modal-actions">
+                <button
+                  type="button"
+                  className="btn-edit"
+                  onClick={() => {
+                    setInventoryAlertsModalOpen(false)
+                    setActiveSection("inventory")
+                  }}
+                >
+                  Ir a inventario
+                </button>
+                <button type="button" className="btn-approve" onClick={() => setInventoryAlertsModalOpen(false)}>
+                  Entendido
+                </button>
+              </div>
+            </div>
+          </div>
         ) : null}
 
         {saveMessage ? <div className="admin-toast">{saveMessage}</div> : null}
@@ -2105,6 +2346,92 @@ export default function AdminDashboard() {
                 </div>
               </section>
             </div>
+
+            <section className="admin-panel-card">
+              <div className="admin-section-heading">
+                <div>
+                  <span className="admin-kicker">Inventario</span>
+                  <h2>Preparados, stock y vencimientos</h2>
+                  <p className="admin-template-help">
+                    Estas alertas aparecen aqui aunque no entres al modulo de inventario.
+                  </p>
+                </div>
+                <div className="admin-inline-actions">
+                  {isSuperAdmin ? (
+                    <>
+                      <button type="button" className="btn-edit" onClick={requestBrowserNotifications}>
+                        {browserNotificationsEnabled ? "Push activo" : "Activar push"}
+                      </button>
+                      <button type="button" className="btn-approve" onClick={handleTestPushNotification}>
+                        Enviar push de prueba
+                      </button>
+                    </>
+                  ) : null}
+                  <button type="button" className="btn-approve" onClick={() => setActiveSection("inventory")}>
+                    Ver inventario
+                  </button>
+                </div>
+              </div>
+
+              <div className="admin-inventory-overview-grid">
+                <article className="admin-inventory-overview-card">
+                  <span className="admin-kicker">Preparados</span>
+                  <strong>{preparedAlerts.length}</strong>
+                  <p>{preparedAlerts.length === 0 ? "Sin preparados criticos." : "Preparados ligados a ventas en nivel bajo o sin stock."}</p>
+                </article>
+                <article className="admin-inventory-overview-card">
+                  <span className="admin-kicker">Stock</span>
+                  <strong>{stockAlerts.length}</strong>
+                  <p>{stockAlerts.length === 0 ? "Sin alertas de stock." : "Items que requieren reposicion o ya estan agotados."}</p>
+                </article>
+                <article className="admin-inventory-overview-card">
+                  <span className="admin-kicker">Vencimientos</span>
+                  <strong>{expiringAlerts.length}</strong>
+                  <p>{expiringAlerts.length === 0 ? "Sin lotes proximos a vencer." : "Lotes vencidos o dentro de la ventana de vencimiento."}</p>
+                </article>
+              </div>
+
+              <div className="admin-inventory-alert-columns">
+                <section className="admin-inventory-alert-block">
+                  <div className="admin-card-toolbar">
+                    <strong>Preparados criticos</strong>
+                    <span>{preparedAlerts.length}</span>
+                  </div>
+                  <div className="admin-inventory-alert-list">
+                    {preparedAlerts.length === 0 ? (
+                      <p className="admin-template-help">Todo en orden con los preparados ligados a productos.</p>
+                    ) : (
+                      preparedAlerts.slice(0, 5).map((alert) => (
+                        <article key={alert.inventoryItemId} className="admin-inventory-alert-item">
+                          <strong>{alert.inventoryItemName}</strong>
+                          <p>{alert.products.join(", ")}</p>
+                          <span>Stock {alert.currentStock} {alert.unitAbbreviation}</span>
+                        </article>
+                      ))
+                    )}
+                  </div>
+                </section>
+
+                <section className="admin-inventory-alert-block">
+                  <div className="admin-card-toolbar">
+                    <strong>Alertas activas</strong>
+                    <span>{actionableInventoryAlerts.length}</span>
+                  </div>
+                  <div className="admin-inventory-alert-list">
+                    {actionableInventoryAlerts.length === 0 ? (
+                      <p className="admin-template-help">Sin alertas accionables en el inventario.</p>
+                    ) : (
+                      actionableInventoryAlerts.slice(0, 6).map((alert) => (
+                        <article key={alert.id} className={`admin-inventory-alert-item admin-inventory-alert-item--${alert.tone}`}>
+                          <strong>{alert.title}</strong>
+                          <p>{alert.detail}</p>
+                        </article>
+                      ))
+                    )}
+                  </div>
+                </section>
+              </div>
+            </section>
           </section>
         ) : null}
 
@@ -2964,7 +3291,7 @@ export default function AdminDashboard() {
                         </div>
                       ) : null}
                     </div>
-                    <div className="admin-inline-actions">
+                    <div className="admin-inline-actions admin-product-card__actions">
                       <button type="button" className="btn-edit" onClick={() => setEditorModal({ type: "product", id: product.id })}>
                         <FaEdit />
                         <span>Editar</span>
