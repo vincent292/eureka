@@ -170,6 +170,26 @@ export interface AdminProduct {
   createdAt: string
   variants: AdminProductVariant[]
   optionGroups: AdminProductOptionGroup[]
+  preparedStockLink: AdminProductPreparedStockLink | null
+}
+
+export interface AdminProductPreparedStockLink {
+  inventoryItemId: string
+  quantityPerSale: number
+  inventoryItemName: string
+  currentStock: number
+  minimumStock: number
+  unitAbbreviation: string
+  inventoryItemActive: boolean
+}
+
+export interface AdminPreparedInventoryItemOption {
+  id: string
+  name: string
+  currentStock: number
+  minimumStock: number
+  unitAbbreviation: string
+  isActive: boolean
 }
 
 export interface AdminProductVariant {
@@ -482,6 +502,39 @@ type AdminProductRow = {
   created_at: string
 }
 
+type AdminProductInventoryLinkRow = {
+  product_id: string
+  inventory_item_id: string
+  quantity_per_sale: number
+  inventory_items:
+    | {
+        id: string
+        name: string
+        current_stock: number
+        minimum_stock: number
+        is_active: boolean
+        inventory_units: { abbreviation: string } | { abbreviation: string }[] | null
+      }
+    | Array<{
+        id: string
+        name: string
+        current_stock: number
+        minimum_stock: number
+        is_active: boolean
+        inventory_units: { abbreviation: string } | { abbreviation: string }[] | null
+      }>
+    | null
+}
+
+type AdminPreparedInventoryItemRow = {
+  id: string
+  name: string
+  current_stock: number
+  minimum_stock: number
+  is_active: boolean
+  inventory_units: { abbreviation: string } | { abbreviation: string }[] | null
+}
+
 type AdminProductVariantRow = {
   id: string
   product_id: string
@@ -595,6 +648,17 @@ const newId = () =>
 
 const firstRelation = <T>(value: T | T[] | null | undefined) =>
   Array.isArray(value) ? value[0] : value
+
+const isMissingPreparedStockFeatureError = (error: { message?: string; code?: string } | null | undefined) => {
+  const message = error?.message || ""
+  return (
+    error?.code === "PGRST205"
+    || error?.code === "42P01"
+    || message.includes("product_inventory_links")
+    || message.includes("prepared_stock_deductions")
+    || message.includes("preview_prepared_stock_issue")
+  )
+}
 
 const slugify = (value: string) =>
   value
@@ -1224,7 +1288,7 @@ export async function fetchAdminProductCategories() {
 }
 
 export async function fetchAdminProducts() {
-  const [productsResult, variantsResult, groupsResult, optionsResult] = await Promise.all([
+  const [productsResult, variantsResult, groupsResult, optionsResult, linksResult] = await Promise.all([
     supabase
       .from("products")
       .select("id, category_id, name, slug, description, base_price, image_path, product_type, is_active, is_featured, sort_order, created_at")
@@ -1242,12 +1306,18 @@ export async function fetchAdminProducts() {
       .from("product_options")
       .select("id, option_group_id, name, extra_price, sort_order, is_active")
       .order("sort_order", { ascending: true }),
+    supabase
+      .from("product_inventory_links")
+      .select("product_id, inventory_item_id, quantity_per_sale, inventory_items(id, name, current_stock, minimum_stock, is_active, inventory_units(abbreviation))"),
   ])
 
   if (productsResult.error) throw new Error(productsResult.error.message)
   if (variantsResult.error) throw new Error(variantsResult.error.message)
   if (groupsResult.error) throw new Error(groupsResult.error.message)
   if (optionsResult.error) throw new Error(optionsResult.error.message)
+  if (linksResult.error && !isMissingPreparedStockFeatureError(linksResult.error)) {
+    throw new Error(linksResult.error.message)
+  }
 
   const optionsByGroup = new Map<string, AdminProductOption[]>()
   ;((optionsResult.data || []) as AdminProductOptionRow[]).forEach((option) => {
@@ -1302,6 +1372,22 @@ export async function fetchAdminProducts() {
     ])
   })
 
+  const preparedStockByProduct = new Map<string, AdminProductPreparedStockLink>()
+  ;(((linksResult.error && isMissingPreparedStockFeatureError(linksResult.error)) ? [] : (linksResult.data || [])) as AdminProductInventoryLinkRow[]).forEach((link) => {
+    const inventoryItem = firstRelation(link.inventory_items)
+    if (!inventoryItem) return
+
+    preparedStockByProduct.set(link.product_id, {
+      inventoryItemId: link.inventory_item_id,
+      quantityPerSale: Number(link.quantity_per_sale),
+      inventoryItemName: inventoryItem.name,
+      currentStock: Number(inventoryItem.current_stock),
+      minimumStock: Number(inventoryItem.minimum_stock),
+      unitAbbreviation: firstRelation(inventoryItem.inventory_units)?.abbreviation || "u",
+      inventoryItemActive: inventoryItem.is_active,
+    })
+  })
+
   return ((productsResult.data || []) as AdminProductRow[]).map((product) => ({
     id: product.id,
     categoryId: product.category_id,
@@ -1317,6 +1403,31 @@ export async function fetchAdminProducts() {
     createdAt: product.created_at,
     variants: variantsByProduct.get(product.id) || [],
     optionGroups: groupsByProduct.get(product.id) || [],
+    preparedStockLink: preparedStockByProduct.get(product.id) || null,
+  }))
+}
+
+export async function fetchPreparedInventoryItemOptions(): Promise<AdminPreparedInventoryItemOption[]> {
+  const { data, error } = await supabase
+    .from("inventory_items")
+    .select("id, name, current_stock, minimum_stock, is_active, inventory_units(abbreviation)")
+    .order("name", { ascending: true })
+
+  if (error) {
+    if (isMissingPreparedStockFeatureError(error)) {
+      return []
+    }
+
+    throw new Error(error.message)
+  }
+
+  return ((data || []) as AdminPreparedInventoryItemRow[]).map((item) => ({
+    id: item.id,
+    name: item.name,
+    currentStock: Number(item.current_stock),
+    minimumStock: Number(item.minimum_stock),
+    unitAbbreviation: firstRelation(item.inventory_units)?.abbreviation || "u",
+    isActive: item.is_active,
   }))
 }
 
@@ -1372,7 +1483,7 @@ export async function deleteProductCategory(id: string) {
 
 export async function createProduct(categoryId: string, input?: Partial<AdminProduct>) {
   const name = input?.name?.trim() || "Nuevo producto"
-  const { error } = await supabase.from("products").insert({
+  const { data, error } = await supabase.from("products").insert({
     category_id: categoryId,
     name,
     slug: slugify(input?.slug || name),
@@ -1383,9 +1494,13 @@ export async function createProduct(categoryId: string, input?: Partial<AdminPro
     is_active: input?.isActive ?? true,
     is_featured: input?.isFeatured ?? false,
     sort_order: input?.sortOrder ?? 0,
-  })
+  }).select("id").single()
 
   if (error) throw new Error(error.message)
+
+  if (input?.preparedStockLink && data?.id) {
+    await saveProductPreparedStockLink(data.id, input.preparedStockLink)
+  }
 }
 
 export async function updateProduct(id: string, patch: Partial<AdminProduct>) {
@@ -1408,10 +1523,43 @@ export async function updateProduct(id: string, patch: Partial<AdminProduct>) {
 
   const { error } = await supabase.from("products").update(payload).eq("id", id)
   if (error) throw new Error(error.message)
+
+  if ("preparedStockLink" in patch) {
+    await saveProductPreparedStockLink(id, patch.preparedStockLink ?? null)
+  }
 }
 
 export async function deleteProduct(id: string) {
   const { error } = await supabase.from("products").delete().eq("id", id)
+  if (error) throw new Error(error.message)
+}
+
+async function saveProductPreparedStockLink(
+  productId: string,
+  link: AdminProductPreparedStockLink | null,
+) {
+  if (!link || !link.inventoryItemId) {
+    const { error } = await supabase.from("product_inventory_links").delete().eq("product_id", productId)
+    if (error && !isMissingPreparedStockFeatureError(error)) throw new Error(error.message)
+    return
+  }
+
+  if (link.quantityPerSale <= 0) {
+    throw new Error("La cantidad por venta debe ser mayor a 0.")
+  }
+
+  const { error } = await supabase.from("product_inventory_links").upsert({
+    product_id: productId,
+    inventory_item_id: link.inventoryItemId,
+    quantity_per_sale: link.quantityPerSale,
+  }, {
+    onConflict: "product_id",
+  })
+
+  if (error && isMissingPreparedStockFeatureError(error)) {
+    throw new Error("La base remota aun no tiene activado el modulo de stock preparado. Aplica la migracion nueva en Supabase.")
+  }
+
   if (error) throw new Error(error.message)
 }
 

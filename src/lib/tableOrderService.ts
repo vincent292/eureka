@@ -162,6 +162,11 @@ const newId = () =>
     ? crypto.randomUUID()
     : `${Date.now()}-${Math.random().toString(16).slice(2)}`
 
+const isMissingPreparedStockFeatureError = (error: { message?: string; code?: string } | null | undefined) => {
+  const message = error?.message || ""
+  return error?.code === "PGRST202" || message.includes("preview_prepared_stock_issue")
+}
+
 export async function fetchTableMenu(tableCode: string) {
   const tableResult = await supabase
     .from("restaurant_tables")
@@ -354,4 +359,19 @@ export async function createTableOrder(input: CreateTableOrderInput) {
     orderStatus: row.order_status,
     paymentStatus: row.payment_status,
   }
+}
+
+export async function previewPreparedStockIssue(items: CreateTableOrderInput["items"]) {
+  const { data, error } = await supabase.rpc("preview_prepared_stock_issue", {
+    p_items: items.map((item) => ({
+      product_id: item.productId,
+      quantity: item.quantity,
+    })),
+  })
+
+  if (error) {
+    if (isMissingPreparedStockFeatureError(error)) return null
+    throw new Error(error.message)
+  }
+  return typeof data === "string" && data.trim() ? data : null
 }

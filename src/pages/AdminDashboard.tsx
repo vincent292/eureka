@@ -36,6 +36,7 @@ import {
   fetchAdminPedidosYaPromo,
   fetchAdminPaymentQrHistory,
   fetchAdminPaymentQrs,
+  fetchPreparedInventoryItemOptions,
   fetchAdminProductCategories,
   fetchAdminProducts,
   fetchAdminRestaurantTables,
@@ -94,6 +95,7 @@ import {
   type AdminPedidosYaPromo,
   type AdminPaymentQr,
   type AdminPaymentQrHistory,
+  type AdminPreparedInventoryItemOption,
   type AdminProduct,
   type AdminProductCategory,
   type AdminProductOption,
@@ -381,6 +383,7 @@ export default function AdminDashboard() {
   const [paymentQrHistory, setPaymentQrHistory] = useState<AdminPaymentQrHistory[]>([])
   const [productCategories, setProductCategories] = useState<AdminProductCategory[]>([])
   const [products, setProducts] = useState<AdminProduct[]>([])
+  const [preparedInventoryItems, setPreparedInventoryItems] = useState<AdminPreparedInventoryItemOption[]>([])
   const [restaurantTables, setRestaurantTables] = useState<AdminRestaurantTable[]>([])
   const [liveOrders, setLiveOrders] = useState<AdminLiveOrder[]>([])
   const [messageTemplates, setMessageTemplates] = useState<AdminMessageTemplate[]>([])
@@ -466,6 +469,7 @@ export default function AdminDashboard() {
         nextDiscountTokens,
         nextPaymentQrs,
         nextPaymentQrHistory,
+        nextPreparedInventoryItems,
         nextProductCategories,
         nextProducts,
         nextRestaurantTables,
@@ -483,6 +487,7 @@ export default function AdminDashboard() {
         fetchAdminDiscountTokens(),
         fetchAdminPaymentQrs(),
         fetchAdminPaymentQrHistory(),
+        fetchPreparedInventoryItemOptions(),
         fetchAdminProductCategories(),
         fetchAdminProducts(),
         fetchAdminRestaurantTables(),
@@ -501,6 +506,7 @@ export default function AdminDashboard() {
       setDiscountTokens(nextDiscountTokens)
       setPaymentQrs(nextPaymentQrs)
       setPaymentQrHistory(nextPaymentQrHistory)
+      setPreparedInventoryItems(nextPreparedInventoryItems)
       setProductCategories(nextProductCategories)
       setProducts(nextProducts)
       setRestaurantTables(nextRestaurantTables)
@@ -1179,6 +1185,18 @@ export default function AdminDashboard() {
     if (product.basePrice < 0) {
       setSaveMessage("El precio base no puede ser negativo.")
       return
+    }
+
+    if (product.preparedStockLink) {
+      if (!product.preparedStockLink.inventoryItemId) {
+        setSaveMessage("Selecciona el preparado que se descontara del inventario.")
+        return
+      }
+
+      if (product.preparedStockLink.quantityPerSale <= 0) {
+        setSaveMessage("La cantidad por venta debe ser mayor a 0.")
+        return
+      }
     }
 
     try {
@@ -2791,6 +2809,16 @@ export default function AdminDashboard() {
                         <span>{product.variants.length} variantes</span>
                         <span>{product.optionGroups.length} grupos de opciones</span>
                       </div>
+                      {product.preparedStockLink ? (
+                        <div className="admin-product-meta">
+                          <span>
+                            Preparado: {product.preparedStockLink.inventoryItemName}
+                          </span>
+                          <strong>
+                            Stock {product.preparedStockLink.currentStock} {product.preparedStockLink.unitAbbreviation}
+                          </strong>
+                        </div>
+                      ) : null}
                     </div>
                     <div className="admin-inline-actions">
                       <button type="button" className="btn-edit" onClick={() => setEditorModal({ type: "product", id: product.id })}>
@@ -3816,6 +3844,112 @@ export default function AdminDashboard() {
                     <label className="admin-switch"><input type="checkbox" checked={editingProduct.isActive} onChange={(event) => setProducts((current) => current.map((item) => item.id === editingProduct.id ? { ...item, isActive: event.target.checked } : item))} />Activo</label>
                     <label className="admin-switch"><input type="checkbox" checked={editingProduct.isFeatured} onChange={(event) => setProducts((current) => current.map((item) => item.id === editingProduct.id ? { ...item, isFeatured: event.target.checked } : item))} />Destacado</label>
                   </div>
+                  <section className="admin-product-editor-section">
+                    <div className="admin-card-toolbar">
+                      <strong>Stock preparado</strong>
+                      <span className="admin-template-help">Vincula este producto con un preparado contado del inventario.</span>
+                    </div>
+                    <label className="admin-switch">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(editingProduct.preparedStockLink)}
+                        onChange={(event) =>
+                          setProducts((current) =>
+                            current.map((item) =>
+                              item.id === editingProduct.id
+                                ? {
+                                    ...item,
+                                    preparedStockLink: event.target.checked
+                                      ? {
+                                          inventoryItemId: preparedInventoryItems.find((option) => option.isActive)?.id || "",
+                                          quantityPerSale: 1,
+                                          inventoryItemName: preparedInventoryItems.find((option) => option.isActive)?.name || "",
+                                          currentStock: preparedInventoryItems.find((option) => option.isActive)?.currentStock || 0,
+                                          minimumStock: preparedInventoryItems.find((option) => option.isActive)?.minimumStock || 0,
+                                          unitAbbreviation: preparedInventoryItems.find((option) => option.isActive)?.unitAbbreviation || "u",
+                                          inventoryItemActive: preparedInventoryItems.find((option) => option.isActive)?.isActive || false,
+                                        }
+                                      : null,
+                                  }
+                                : item,
+                            ),
+                          )
+                        }
+                      />
+                      Descontar del inventario al vender
+                    </label>
+                    {editingProduct.preparedStockLink ? (
+                      <>
+                        <div className="admin-mini-grid">
+                          <label>
+                            Preparado
+                            <select
+                              value={editingProduct.preparedStockLink.inventoryItemId}
+                              onChange={(event) => {
+                                const selectedItem = preparedInventoryItems.find((option) => option.id === event.target.value)
+                                setProducts((current) =>
+                                  current.map((item) =>
+                                    item.id === editingProduct.id
+                                      ? {
+                                          ...item,
+                                          preparedStockLink: selectedItem
+                                            ? {
+                                                inventoryItemId: selectedItem.id,
+                                                quantityPerSale: item.preparedStockLink?.quantityPerSale || 1,
+                                                inventoryItemName: selectedItem.name,
+                                                currentStock: selectedItem.currentStock,
+                                                minimumStock: selectedItem.minimumStock,
+                                                unitAbbreviation: selectedItem.unitAbbreviation,
+                                                inventoryItemActive: selectedItem.isActive,
+                                              }
+                                            : item.preparedStockLink,
+                                        }
+                                      : item,
+                                  ),
+                                )
+                              }}
+                            >
+                              <option value="">Selecciona un preparado</option>
+                              {preparedInventoryItems.map((option) => (
+                                <option key={option.id} value={option.id}>
+                                  {option.name} | stock {option.currentStock} {option.unitAbbreviation}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label>
+                            Cantidad por venta
+                            <input
+                              type="number"
+                              min="0.001"
+                              step="1"
+                              value={editingProduct.preparedStockLink.quantityPerSale}
+                              onChange={(event) =>
+                                setProducts((current) =>
+                                  current.map((item) =>
+                                    item.id === editingProduct.id && item.preparedStockLink
+                                      ? {
+                                          ...item,
+                                          preparedStockLink: {
+                                            ...item.preparedStockLink,
+                                            quantityPerSale: Math.max(0.001, Number(event.target.value || 1)),
+                                          },
+                                        }
+                                      : item,
+                                  ),
+                                )
+                              }
+                            />
+                          </label>
+                        </div>
+                        <p className="admin-template-help">
+                          {editingProduct.preparedStockLink.inventoryItemName
+                            ? `Stock actual: ${editingProduct.preparedStockLink.currentStock} ${editingProduct.preparedStockLink.unitAbbreviation}. Minimo: ${editingProduct.preparedStockLink.minimumStock} ${editingProduct.preparedStockLink.unitAbbreviation}.`
+                            : "Selecciona el preparado que se debe descontar."}
+                        </p>
+                      </>
+                    ) : null}
+                  </section>
                   <button type="button" className="btn-edit" onClick={() => handleProductSave(editingProduct)}><FaSave />Guardar producto</button>
 
                   <section className="admin-product-editor-section">

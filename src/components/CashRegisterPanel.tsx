@@ -8,6 +8,7 @@ import {
   createCashExpense,
   createManualIncome,
   createPosSale,
+  previewPreparedPosStockIssue,
   fetchCashExpenses,
   fetchCashMovements,
   fetchCashSessions,
@@ -334,6 +335,17 @@ export default function CashRegisterPanel({
       return
     }
     runAction(async () => {
+      const stockIssue = await previewPreparedPosStockIssue(
+        cart.map((item) => ({
+          productId: item.productId,
+          variantId: item.variantId,
+          quantity: item.quantity,
+          notes: item.notes,
+          options: item.optionIds,
+        })),
+      )
+      if (stockIssue) throw new Error(stockIssue)
+
       const receiptPath = posForm.method === "qr" && posReceipt ? await uploadCashReceipt(posReceipt) : null
       if (posForm.method === "qr" && !receiptPath) throw new Error("Sube el comprobante QR.")
       await createPosSale({
@@ -574,6 +586,11 @@ export default function CashRegisterPanel({
                   {product.imagePath ? <img src={product.imagePath} alt={product.name} /> : <span />}
                   <strong>{product.name}</strong>
                   <em>{money(product.variants[0]?.price ?? product.basePrice)}</em>
+                  {product.preparedStockLink ? (
+                    <small>
+                      Stock {product.preparedStockLink.currentStock} {product.preparedStockLink.unitAbbreviation}
+                    </small>
+                  ) : null}
                 </button>
               ))}
             </div>

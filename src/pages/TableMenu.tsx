@@ -4,6 +4,7 @@ import { useParams } from "react-router-dom"
 import {
   createTableOrder,
   fetchTableMenu,
+  previewPreparedStockIssue,
   uploadOrderReceipt,
   type MenuPaymentMethod,
   type PublicMenuOptionGroup,
@@ -288,6 +289,19 @@ export default function TableMenu() {
     setErrorMessage("")
 
     try {
+      const stockIssue = await previewPreparedStockIssue(
+        cart.map((item) => ({
+          productId: item.product.id,
+          variantId: item.variantId,
+          quantity: item.quantity,
+          notes: item.notes,
+          options: item.selectedOptions,
+        })),
+      )
+      if (stockIssue) {
+        throw new Error(stockIssue)
+      }
+
       const receiptPath = paymentMethod === "qr" && receipt ? await uploadOrderReceipt(receipt) : null
       const result = await createTableOrder({
         tableCode: table.tableCode,

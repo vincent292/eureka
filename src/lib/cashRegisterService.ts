@@ -192,6 +192,11 @@ const newId = () =>
     ? crypto.randomUUID()
     : `${Date.now()}-${Math.random().toString(16).slice(2)}`
 
+const isMissingPreparedStockFeatureError = (error: { message?: string; code?: string } | null | undefined) => {
+  const message = error?.message || ""
+  return error?.code === "PGRST202" || message.includes("preview_prepared_stock_issue")
+}
+
 const toNumber = (value: unknown) => Number(value || 0)
 
 const mapCashSession = (row: CashSessionRow): CashSession => ({
@@ -417,6 +422,21 @@ export async function createPosSale(input: {
     })),
   })
   if (error) throw new Error(error.message)
+}
+
+export async function previewPreparedPosStockIssue(items: PosSaleInputItem[]) {
+  const { data, error } = await supabase.rpc("preview_prepared_stock_issue", {
+    p_items: items.map((item) => ({
+      product_id: item.productId,
+      quantity: item.quantity,
+    })),
+  })
+
+  if (error) {
+    if (isMissingPreparedStockFeatureError(error)) return null
+    throw new Error(error.message)
+  }
+  return typeof data === "string" && data.trim() ? data : null
 }
 
 export async function registerReservationPayment(input: {
